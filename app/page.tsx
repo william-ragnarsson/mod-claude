@@ -28,9 +28,9 @@ export default async function Home() {
 
       <section className="mt-12 flex flex-col gap-5 rounded-xl border border-line bg-subtle p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight text-fg">Built a mod?</h2>
+          <h2 className="text-lg font-semibold tracking-tight text-fg">Built a mod or found one?</h2>
           <p className="mt-1 text-sm text-muted">
-            Paste its GitHub repo and it&apos;s listed right away. No account needed.
+            Paste its GitHub repo, yours or someone else&apos;s, and it&apos;s listed right away. No account needed.
           </p>
         </div>
         <Link
