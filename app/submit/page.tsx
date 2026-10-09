@@ -24,14 +24,23 @@ export default function SubmitPage() {
         <h2 className="text-sm font-medium text-fg">What counts as a mod</h2>
         <p className="mt-2 text-sm text-muted">
           A Claude Code plugin whose <code className="font-mono text-fg">hooks/hooks.json</code> lists{" "}
-          <code className="font-mono text-fg">modules</code>. A repo can hold any number of them.
+          <code className="font-mono text-fg">modules</code>. To be listed it must install with{" "}
+          <code className="font-mono text-fg">/plugin install</code>, so the repo needs a marketplace file at its top
+          level that lists it. A repo can hold any number of mods.
         </p>
         <pre className="mt-5 overflow-x-auto rounded-lg border border-line bg-subtle p-4 font-mono text-[13px] leading-6 text-muted">
           {`my-mod/
-├── .claude-plugin/plugin.json   `}
+├── .claude-plugin/
+│   ├── marketplace.json   `}
+          <span className="text-faint">{`{ "name": "my-mods", "plugins": [`}</span>
+          {`
+│   │                      `}
+          <span className="text-faint">{`  { "name": "my-mod", "source": "./" } ] }`}</span>
+          {`
+│   └── plugin.json        `}
           <span className="text-faint">{`{ "name": "my-mod", "description": "…" }`}</span>
           {`
-└── hooks/hooks.json             `}
+└── hooks/hooks.json       `}
           <span className="text-faint">{`{ "modules": ["./register.js"] }`}</span>
         </pre>
       </section>

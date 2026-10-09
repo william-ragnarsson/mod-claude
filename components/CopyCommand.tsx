@@ -16,7 +16,7 @@ export function CopyCommand({ command, prompt = "$" }: { command: string; prompt
   );
 }
 
-export function CopyButton({ text }: { text: string }) {
+export function CopyButton({ text, onCopy }: { text: string; onCopy?: () => void }) {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -29,6 +29,7 @@ export function CopyButton({ text }: { text: string }) {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
+      onCopy?.();
     } catch {
       // Clipboard can be blocked (insecure origin, permissions). The command is still selectable.
     }

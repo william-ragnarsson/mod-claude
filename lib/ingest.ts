@@ -1,8 +1,8 @@
-import { getFilePaths, getRawFile, getRepo, type RepoInfo } from "./github";
+import { getFilePaths, getRawFile, getRepo, parseRepoUrl, type RepoInfo } from "./github";
 import { adminClient } from "./supabase";
 
 export type ModRef = { owner: string; repo: string; slug: string; name: string };
-export type IngestResult = { added: ModRef[]; existing: ModRef[] };
+export type IngestResult = { added: ModRef[]; existing: ModRef[]; removed: ModRef[] };
 
 /** An error whose message is safe to show to the person who submitted the repo. */
 export class IngestError extends Error {}
@@ -11,6 +11,9 @@ const HOOKS_FILE = /(^|\/)hooks\/hooks\.json$/;
 const SKIPPED_DIR = /(^|\/)(node_modules|tests?|__tests__|fixtures?|__fixtures__)\//;
 const README_FILE = /^readme(\.md|\.markdown)?$/i;
 const MARKETPLACE_FILE = ".claude-plugin/marketplace.json";
+// The file types Claude Code loads as a hooks module, and the `register` export it calls.
+const MODULE_FILE = /\.(ts|tsx|jsx|js|mjs|cjs|mts|cts)$/;
+const EXPORTS_REGISTER = /export\s+(async\s+)?(function\*?|const|let|var)\s+register\b|export\s*\{[^}]*\bregister\b/;
 const MAX_MODS = 100;
 const MAX_README_CHARS = 200_000;
 
@@ -23,6 +26,8 @@ export type FoundMod = {
   marketplace: string | null;
   readme: string | null;
   readmePath: string | null;
+  /** "owner/repo" when the manifest says the mod comes from someone else's repo. Copies aren't listed. */
+  copyOf: string | null;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -46,13 +51,23 @@ export function slugify(name: string): string {
   );
 }
 
-/** Joins path parts and drops "", "." and leading "./", so "./plugins/x/" becomes "plugins/x". */
+/** Joins path parts and resolves "", "." and "..", so "./plugins/x/" becomes "plugins/x". */
 function joinPath(...parts: string[]): string {
-  return parts
-    .join("/")
-    .split("/")
-    .filter((segment) => segment && segment !== ".")
-    .join("/");
+  const segments: string[] = [];
+  for (const segment of parts.join("/").split("/")) {
+    if (segment === "..") segments.pop();
+    else if (segment && segment !== ".") segments.push(segment);
+  }
+  return segments.join("/");
+}
+
+/** The repo a vendored mod was copied from: the manifest's repository (or homepage) when another owner's. */
+function findCopySource(manifest: Json, repo: RepoInfo): string | null {
+  const repository = manifest?.repository?.url ?? manifest?.repository;
+  const link = typeof repository === "string" ? repository : manifest?.homepage;
+  const source = typeof link === "string" ? parseRepoUrl(link) : null;
+  if (!source || source.owner.toLowerCase() === repo.owner.toLowerCase()) return null;
+  return `${source.owner}/${source.repo}`;
 }
 
 function findReadme(files: string[], dir: string): string | null {
@@ -85,9 +100,17 @@ async function readMod(
 ): Promise<FoundMod | null> {
   const raw = (path: string) => getRawFile(repo.owner, repo.repo, repo.defaultBranch, path);
 
-  // Having a "modules" entry in hooks/hooks.json is what makes a plugin a mod.
+  // A mod is a plugin whose hooks/hooks.json names a hooks module under "modules", and that module
+  // exports register(). Plugins with only command hooks, skills or agents have no such module.
   const hooks = parseJson(await raw(hooksPath));
-  if (!Array.isArray(hooks?.modules) || hooks.modules.length === 0) return null;
+  const modules: unknown[] = Array.isArray(hooks?.modules) ? hooks.modules : [];
+  if (modules.length === 0) return null;
+  for (const entry of modules) {
+    if (typeof entry !== "string") return null;
+    const modulePath = joinPath(hooksPath, "..", entry);
+    if (!MODULE_FILE.test(modulePath) || !files.includes(modulePath)) return null;
+    if (!EXPORTS_REGISTER.test((await raw(modulePath)) ?? "")) return null;
+  }
 
   const dir = hooksPath.replace(HOOKS_FILE, "");
   const manifestPath = joinPath(dir, ".claude-plugin/plugin.json");
@@ -107,16 +130,24 @@ async function readMod(
     slug: slugify(name),
     path: dir,
     description,
-    // Both are needed to install from the marketplace; without them the page shows the clone fallback.
+    // Both are needed for `/plugin install <name>@<marketplace>`. Mods without them aren't listed.
     installName: marketplaceName ? installName : null,
     marketplace: installName ? marketplaceName || null : null,
     readme,
     readmePath,
+    copyOf: findCopySource(manifest, repo),
   };
 }
 
-/** Finds every mod in a public GitHub repo, without saving anything. */
-export async function findMods(owner: string, repo: string): Promise<{ repo: RepoInfo; mods: FoundMod[] }> {
+/**
+ * Finds every listable mod in a public GitHub repo, without saving anything. Skipped: `copies`, mods vendored
+ * from other repos, and `unlisted`, mods the repo's top-level marketplace file doesn't list, so they can't be
+ * installed with `/plugin marketplace add <owner>/<repo>` and `/plugin install`.
+ */
+export async function findMods(
+  owner: string,
+  repo: string,
+): Promise<{ repo: RepoInfo; mods: FoundMod[]; copies: FoundMod[]; unlisted: FoundMod[] }> {
   const info = await getRepo(owner, repo);
   if (!info) throw new IngestError("Repo not found or private.");
 
@@ -131,20 +162,58 @@ export async function findMods(owner: string, repo: string): Promise<{ repo: Rep
   const found = (await Promise.all(hookFiles.map((path) => readMod(info, files, path, marketplace)))).filter(
     (mod): mod is FoundMod => mod !== null,
   );
+  const copies = found.filter((mod) => mod.copyOf);
+  const unlisted = found.filter((mod) => !mod.copyOf && !(mod.installName && mod.marketplace));
   const seen = new Set<string>();
-  const mods = found.filter((mod) => !seen.has(mod.slug) && seen.add(mod.slug));
-  if (mods.length === 0) {
-    throw new IngestError('No mod found. A mod needs hooks/hooks.json with a "modules" entry.');
+  const mods = found.filter(
+    (mod) => !mod.copyOf && mod.installName && mod.marketplace && !seen.has(mod.slug) && seen.add(mod.slug),
+  );
+  if (mods.length === 0 && unlisted.length > 0) {
+    throw new IngestError(
+      `Found ${unlisted.length === 1 ? "a mod" : `${unlisted.length} mods`}, but they can't be installed with /plugin install. ` +
+        `List them in ${MARKETPLACE_FILE} at the top of the repo, then submit again.`,
+    );
   }
-  return { repo: info, mods };
+  if (mods.length === 0 && copies.length > 0) {
+    const sources = [...new Set(copies.map((mod) => mod.copyOf))].join(", ");
+    throw new IngestError(`The mods here are copies from ${sources}. Submit the original repo instead.`);
+  }
+  if (mods.length === 0) {
+    throw new IngestError(
+      'No mod found. A mod needs hooks/hooks.json with a "modules" entry naming a module that exports register().',
+    );
+  }
+  return { repo: info, mods, copies, unlisted };
+}
+
+/** Deletes a repo's rows, or only the ones whose slug isn't in `keep`. Returns what it deleted. */
+async function removeMods(owner: string, repo: string, keep = new Set<string>()): Promise<ModRef[]> {
+  const db = adminClient();
+  const { data: rows, error } = await db.from("mods").select("id, slug, name").eq("owner", owner).eq("repo", repo);
+  if (error) throw new Error(error.message);
+  const gone = rows.filter((row) => !keep.has(row.slug.toLowerCase()));
+  if (gone.length > 0) {
+    const ids = gone.map((row) => row.id as string);
+    const { error } = await db.from("mods").delete().in("id", ids);
+    if (error) throw new Error(error.message);
+  }
+  return gone.map((row) => ({ owner, repo, slug: row.slug, name: row.name }));
 }
 
 /**
- * Adds or refreshes every mod in a public GitHub repo.
- * Used by the submit form, the seed script and the daily refresh.
+ * Adds or refreshes every mod in a public GitHub repo, and removes the repo's rows that are no longer listable
+ * (deleted, renamed, copies, or dropped from the marketplace). Used by the submit form, the seed script and the daily refresh.
  */
 export async function ingestRepo(owner: string, repo: string): Promise<IngestResult> {
-  const { repo: info, mods } = await findMods(owner, repo);
+  let found: Awaited<ReturnType<typeof findMods>>;
+  try {
+    found = await findMods(owner, repo);
+  } catch (error) {
+    // The repo is gone, private, or has no mods left. Network and rate-limit errors aren't IngestErrors.
+    if (error instanceof IngestError) await removeMods(owner, repo);
+    throw error;
+  }
+  const { repo: info, mods } = found;
 
   const db = adminClient();
   const { data: rows, error } = await db
@@ -172,7 +241,11 @@ export async function ingestRepo(owner: string, repo: string): Promise<IngestRes
     updated_at: now,
   });
 
-  const result: IngestResult = { added: [], existing: [] };
+  const result: IngestResult = {
+    added: [],
+    existing: [],
+    removed: await removeMods(info.owner, info.repo, new Set(mods.map((mod) => mod.slug))),
+  };
   for (const mod of mods) {
     const ref = { owner: info.owner, repo: info.repo, slug: mod.slug, name: mod.name };
     const id = existingIds.get(mod.slug);

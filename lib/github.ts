@@ -60,6 +60,8 @@ export async function getFilePaths(owner: string, repo: string, branch: string):
   const res = await api(`/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`);
   if (!res.ok) throw new GitHubError(`Couldn't list files (GitHub returned ${res.status}).`);
   const data = await res.json();
+  // A partial listing would make mods look deleted, so refuse it.
+  if (data.truncated) throw new GitHubError("This repo is too large to list.");
   return (data.tree ?? [])
     .filter((entry: { type: string }) => entry.type === "blob")
     .map((entry: { path: string }) => entry.path);
@@ -70,7 +72,7 @@ export function rawUrl(owner: string, repo: string, branch: string, path: string
   return `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(branch)}/${encoded}`;
 }
 
-/** Raw file contents. Doesn't count against the API rate limit. */
+/** Raw file contents, or null when the file doesn't exist. Doesn't count against the API rate limit. */
 export async function getRawFile(
   owner: string,
   repo: string,
@@ -78,5 +80,8 @@ export async function getRawFile(
   path: string,
 ): Promise<string | null> {
   const res = await fetch(rawUrl(owner, repo, branch, path), { cache: "no-store" });
-  return res.ok ? res.text() : null;
+  if (res.status === 404) return null;
+  // Any other failure throws, so a GitHub hiccup can't make a mod look deleted.
+  if (!res.ok) throw new GitHubError(`Couldn't read ${path} (GitHub returned ${res.status}).`);
+  return res.text();
 }

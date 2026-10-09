@@ -6,6 +6,12 @@ import type { ModSummary } from "@/lib/data";
 
 type Tab = "top" | "new";
 
+/** One row on the list: a repo, with every mod of it that matches the search. Stars belong to the repo, so they count once. */
+type Entry = { owner: string; repo: string; stars: number; latest: string; mods: ModSummary[] };
+
+// A repo row names this many of its mods, then links to the repo for the rest.
+const SHOWN_MODS = 6;
+
 const compact = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
 
 export function ModList({ mods }: { mods: ModSummary[] }) {
@@ -28,13 +34,31 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
 
   const visible = useMemo(() => {
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-    const matches = mods.filter((mod) => {
+    const entries = new Map<string, Entry>();
+    // getMods sorts by stars, so each repo lands in Top order the first time one of its mods shows up.
+    for (const mod of mods) {
       const haystack = `${mod.name} ${mod.owner}/${mod.repo} ${mod.description ?? ""}`.toLowerCase();
-      return terms.every((term) => haystack.includes(term));
-    });
-    if (tab === "new") matches.sort((a, b) => b.created_at.localeCompare(a.created_at));
+      if (!terms.every((term) => haystack.includes(term))) continue;
+      const key = `${mod.owner}/${mod.repo}`;
+      const entry = entries.get(key);
+      if (entry) {
+        entry.mods.push(mod);
+        if (mod.created_at > entry.latest) entry.latest = mod.created_at;
+      } else {
+        entries.set(key, { owner: mod.owner, repo: mod.repo, stars: mod.stars, latest: mod.created_at, mods: [mod] });
+      }
+    }
+    const matches = [...entries.values()];
+    if (tab === "new") matches.sort((a, b) => b.latest.localeCompare(a.latest));
     return matches;
   }, [mods, query, tab]);
+
+  // How many mods each repo holds, matching the search or not.
+  const totals = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const { owner, repo } of mods) counts.set(`${owner}/${repo}`, (counts.get(`${owner}/${repo}`) ?? 0) + 1);
+    return counts;
+  }, [mods]);
 
   return (
     <section>
@@ -87,32 +111,81 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
           </p>
         ) : (
           <ol>
-            {visible.map((mod, index) => (
-              <li key={`${mod.owner}/${mod.repo}/${mod.slug}`}>
-                <Link
-                  href={`/${mod.owner}/${mod.repo}/${mod.slug}`}
-                  className="grid grid-cols-[2.25rem_1fr_auto] items-center gap-4 border-b border-line px-3 py-3.5 transition-colors hover:bg-subtle"
-                >
-                  <span className="font-mono text-sm text-faint tabular-nums">{index + 1}</span>
-                  <span className="min-w-0">
-                    <span className="flex min-w-0 items-baseline gap-2.5">
-                      <span className="truncate font-medium text-fg">{mod.name}</span>
-                      <span className="truncate font-mono text-xs text-faint">
-                        {mod.owner}/{mod.repo}
-                      </span>
-                    </span>
-                    {mod.description && (
-                      <span className="mt-0.5 block truncate text-sm text-muted">{mod.description}</span>
-                    )}
-                  </span>
-                  <span className="font-mono text-sm text-muted tabular-nums">{compact.format(mod.stars)}</span>
-                </Link>
+            {visible.map((entry, index) => (
+              <li key={`${entry.owner}/${entry.repo}`}>
+                {entry.mods.length === 1 ? (
+                  <ModRow mod={entry.mods[0]} rank={index + 1} />
+                ) : (
+                  <RepoRow entry={entry} total={totals.get(`${entry.owner}/${entry.repo}`) ?? 0} rank={index + 1} />
+                )}
               </li>
             ))}
           </ol>
         )}
       </div>
     </section>
+  );
+}
+
+const ROW = "grid grid-cols-[2.25rem_1fr_auto] items-center gap-4 border-b border-line px-3 py-3.5 transition-colors hover:bg-subtle";
+
+function ModRow({ mod, rank }: { mod: ModSummary; rank: number }) {
+  return (
+    <Link href={`/${mod.owner}/${mod.repo}/${mod.slug}`} className={ROW}>
+      <span className="font-mono text-sm text-faint tabular-nums">{rank}</span>
+      <span className="min-w-0">
+        <span className="flex min-w-0 items-baseline gap-2.5">
+          <span className="truncate font-medium text-fg">{mod.name}</span>
+          <span className="truncate font-mono text-xs text-faint">
+            {mod.owner}/{mod.repo}
+          </span>
+        </span>
+        {mod.description && <span className="mt-0.5 block truncate text-sm text-muted">{mod.description}</span>}
+      </span>
+      <span className="font-mono text-sm text-muted tabular-nums">{compact.format(mod.stars)}</span>
+    </Link>
+  );
+}
+
+// The repo name links to the repo's page and covers the row; each mod's chip links to that mod above it.
+function RepoRow({ entry, total, rank }: { entry: Entry; total: number; rank: number }) {
+  const repoHref = `/${entry.owner}/${entry.repo}`;
+  const shown = entry.mods.slice(0, SHOWN_MODS);
+  const more = total - shown.length;
+  return (
+    <div className={`relative ${ROW}`}>
+      <span className="font-mono text-sm text-faint tabular-nums">{rank}</span>
+      <span className="min-w-0">
+        <span className="flex min-w-0 items-baseline gap-2.5">
+          <Link href={repoHref} className="truncate font-medium text-fg after:absolute after:inset-0">
+            {entry.repo}
+          </Link>
+          <span className="truncate font-mono text-xs text-faint">
+            {entry.owner} · {entry.mods.length < total ? `${entry.mods.length} of ${total}` : total} mods
+          </span>
+        </span>
+        <span className="mt-1.5 flex flex-wrap gap-1.5">
+          {shown.map((mod) => (
+            <Link
+              key={mod.slug}
+              href={`/${mod.owner}/${mod.repo}/${mod.slug}`}
+              className="relative z-10 max-w-full truncate rounded-md border border-line bg-bg px-2 py-0.5 text-xs text-muted transition-colors hover:border-line-strong hover:text-fg"
+            >
+              {mod.name}
+            </Link>
+          ))}
+          {more > 0 && (
+            <Link
+              href={repoHref}
+              className="relative z-10 rounded-md px-1.5 py-0.5 text-xs text-faint transition-colors hover:text-fg"
+            >
+              +{more} more
+            </Link>
+          )}
+        </span>
+      </span>
+      <span className="font-mono text-sm text-muted tabular-nums">{compact.format(entry.stars)}</span>
+    </div>
   );
 }
 

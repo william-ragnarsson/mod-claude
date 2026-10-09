@@ -6,7 +6,7 @@ import { CopyButton } from "@/components/CopyCommand";
 type InstallGroup = { label: string; commands: string[] };
 
 // One card, one tab per way to install. Each line copies on its own, since Claude Code takes one slash command at a time.
-export function InstallTabs({ groups }: { groups: InstallGroup[] }) {
+export function InstallTabs({ groups, onCopy }: { groups: InstallGroup[]; onCopy?: () => void }) {
   const [active, setActive] = useState(0);
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const id = useId();
@@ -55,7 +55,7 @@ export function InstallTabs({ groups }: { groups: InstallGroup[] }) {
               {command.startsWith("/") ? ">" : "$"}
             </span>
             <code className="min-w-0 flex-1 text-fg [overflow-wrap:anywhere]">{command}</code>
-            <CopyButton text={command} />
+            <CopyButton text={command} onCopy={onCopy} />
           </div>
         ))}
       </div>
