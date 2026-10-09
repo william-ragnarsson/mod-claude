@@ -2,9 +2,21 @@
 
 import { useEffect, useState } from "react";
 
-type Props = { command: string; prompt?: string; onCopy?: () => void };
+export function CopyCommand({ command, prompt = "$" }: { command: string; prompt?: string }) {
+  return (
+    <div className="flex min-w-0 items-start gap-3 rounded-lg border border-line bg-subtle py-1.5 pr-1.5 pl-3.5 font-mono text-[13px] leading-7">
+      <span aria-hidden className="select-none text-faint">
+        {prompt}
+      </span>
+      <code className="min-w-0 flex-1 text-fg [overflow-wrap:anywhere]">
+        {command}
+      </code>
+      <CopyButton text={command} />
+    </div>
+  );
+}
 
-export function CopyCommand({ command, prompt = "$", onCopy }: Props) {
+export function CopyButton({ text, onCopy }: { text: string; onCopy?: () => void }) {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -15,7 +27,7 @@ export function CopyCommand({ command, prompt = "$", onCopy }: Props) {
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(command);
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       onCopy?.();
     } catch {
@@ -24,22 +36,14 @@ export function CopyCommand({ command, prompt = "$", onCopy }: Props) {
   }
 
   return (
-    <div className="flex min-w-0 items-start gap-3 rounded-lg border border-line bg-subtle py-1.5 pr-1.5 pl-3.5 font-mono text-[13px] leading-7">
-      <span aria-hidden className="select-none text-faint">
-        {prompt}
-      </span>
-      <code className="min-w-0 flex-1 text-fg [overflow-wrap:anywhere]">
-        {command}
-      </code>
-      <button
-        type="button"
-        onClick={copy}
-        aria-label={copied ? "Copied" : "Copy command"}
-        className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-fg"
-      >
-        {copied ? <CheckIcon /> : <CopyIcon />}
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={copy}
+      aria-label={copied ? "Copied" : "Copy command"}
+      className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-fg"
+    >
+      {copied ? <CheckIcon /> : <CopyIcon />}
+    </button>
   );
 }
 

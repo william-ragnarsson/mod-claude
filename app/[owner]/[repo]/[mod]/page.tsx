@@ -43,7 +43,7 @@ function ModSkeleton() {
       <div className="h-5 w-56 rounded bg-subtle" />
       <div className="mt-4 h-10 w-48 rounded bg-subtle" />
       <div className="mt-4 h-6 w-full max-w-xl rounded bg-subtle" />
-      <div className="mt-12 h-28 w-full max-w-2xl rounded-lg bg-subtle" />
+      <div className="mt-8 h-36 w-full max-w-2xl rounded-lg bg-subtle" />
     </div>
   );
 }
@@ -79,7 +79,7 @@ async function ModDetails({ params }: Pick<PageProps<"/[owner]/[repo]/[mod]">, "
       <h1 className="mt-4 text-3xl font-semibold tracking-tighter break-words text-fg sm:text-4xl">{mod.name}</h1>
       {mod.description && <p className="mt-3 max-w-2xl text-lg text-muted">{mod.description}</p>}
 
-      <section aria-labelledby="install" className="mt-10 max-w-2xl">
+      <section aria-labelledby="install" className="mt-8 max-w-2xl">
         <h2 id="install" className="mb-3 text-sm font-medium text-fg">
           Install
         </h2>

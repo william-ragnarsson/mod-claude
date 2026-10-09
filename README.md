@@ -35,8 +35,8 @@ npx tsx --env-file=.env.local scripts/seed.ts owner/repo other/repo    # add spe
 
 | Name | Where to get it |
 | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase → Project Settings → API Keys (`sb_publishable_…`) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Optional: defaults to the site's own project in `lib/supabase.ts`. Supabase → Project Settings → API |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Optional, with the same default. Supabase → Project Settings → API Keys (`sb_publishable_…`) |
 | `SUPABASE_SECRET_KEY` | Supabase → Project Settings → API Keys → Secret keys. Server only. |
 | `GITHUB_TOKEN` | GitHub → Settings → Developer settings → Fine-grained token with public repo read-only access. Raises the limit from 60 to 5,000 requests per hour. |
 | `CRON_SECRET` | Any long random string, for example `openssl rand -hex 32` |
@@ -44,6 +44,6 @@ npx tsx --env-file=.env.local scripts/seed.ts owner/repo other/repo    # add spe
 ## Deploy
 
 1. Push this repo to GitHub and import it in Vercel.
-2. Add the five environment variables above to the Vercel project.
+2. Add `SUPABASE_SECRET_KEY`, `GITHUB_TOKEN` and `CRON_SECRET` to the Vercel project. Without them the site still builds and lists mods, but submitting and the daily refresh fail.
 3. Add the domain `mod-claude.com` (and `www.mod-claude.com`) under Project → Domains.
 4. `vercel.json` schedules `/api/cron/refresh` daily at 06:00 UTC. Vercel sends `CRON_SECRET` automatically.

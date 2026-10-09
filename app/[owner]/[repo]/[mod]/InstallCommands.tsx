@@ -1,6 +1,6 @@
 "use client";
 
-import { CopyCommand } from "@/components/CopyCommand";
+import { InstallTabs } from "@/components/InstallTabs";
 import { countInstall } from "./actions";
 
 type Props = {
@@ -23,23 +23,5 @@ export function InstallCommands({ owner, repo, slug, groups }: Props) {
     countInstall(owner, repo, slug).catch(() => {});
   }
 
-  return (
-    <div className="space-y-5">
-      {groups.map(({ label, commands }) => (
-        <div key={label}>
-          <p className="mb-1.5 text-xs text-faint">{label}</p>
-          <div className="space-y-2">
-            {commands.map((command) => (
-              <CopyCommand
-                key={command}
-                command={command}
-                prompt={command.startsWith("/") ? ">" : "$"}
-                onCopy={onCopy}
-              />
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+  return <InstallTabs groups={groups} onCopy={onCopy} />;
 }

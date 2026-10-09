@@ -104,7 +104,10 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
         </div>
         {visible.length === 0 ? (
           <p className="px-3 py-10 text-sm text-muted">
-            {mods.length === 0 ? "No mods listed yet." : "No mods match your search."}
+            {mods.length === 0 ? "No mods listed yet. " : "No mods match your search. "}
+            <Link href="/submit" className="text-fg underline underline-offset-4 hover:no-underline">
+              {mods.length === 0 ? "Submit the first one" : "Know one that's missing?"}
+            </Link>
           </p>
         ) : (
           <ol>

@@ -77,10 +77,7 @@ export function installCommands(mod: Mod): { label: string; commands: string[] }
   const repo = `${mod.owner}/${mod.repo}`;
   const plugin = `${mod.install_name}@${mod.marketplace}`;
   return [
-    { label: "In Claude Code", commands: [`/plugin marketplace add ${repo}`, `/plugin install ${plugin}`] },
-    {
-      label: "Or from your shell",
-      commands: [`claude plugin marketplace add ${repo} && claude plugin install ${plugin}`],
-    },
+    { label: "Claude Code", commands: [`/plugin marketplace add ${repo}`, `/plugin install ${plugin}`] },
+    { label: "Terminal", commands: [`claude plugin marketplace add ${repo}`, `claude plugin install ${plugin}`] },
   ];
 }
