@@ -9,11 +9,11 @@ export default async function Image({ params }: { params: Promise<{ owner: strin
   const { owner, repo, mod: slug } = await params;
   const mod = await getMod(owner, repo, slug);
   if (!mod) return new Response("Not found", { status: 404 });
-  const stats = [`${compact.format(mod.stars)} stars`, mod.installs > 0 && `${compact.format(mod.installs)} installs`];
+  // Stars only, like the page: getMod's installs leave out the made-up ones the home list adds (lib/synthetic.ts).
   return ogImage({
     eyebrow: `${mod.owner}/${mod.repo}`,
     title: mod.name,
     description: mod.description,
-    footer: ["Claude Code mod", ...stats].filter(Boolean).join(" · "),
+    footer: `Claude Code mod · ${compact.format(mod.stars)} stars`,
   });
 }
