@@ -1,13 +1,33 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ModSummary } from "@/lib/data";
 
-type Tab = "top" | "new";
+const TABS = {
+  popular: { label: "Popular", hint: "Most stars and installs" },
+  hot: { label: "Hot", hint: "Most installs lately: each counts half as much every 3 days" },
+  recent: { label: "Recent", hint: "Newest on the site" },
+};
+type Tab = keyof typeof TABS;
 
-/** One row on the list: a repo, with every mod of it that matches the search. Stars belong to the repo, so they count once. */
-type Entry = { owner: string; repo: string; stars: number; latest: string; mods: ModSummary[] };
+/**
+ * One row on the list: a repo, with every mod of it that matches the search. Stars belong to the repo, so they count once.
+ * Installs and heat add up over the row's mods.
+ */
+type Entry = { owner: string; repo: string; stars: number; installs: number; heat: number; latest: string; mods: ModSummary[] };
+
+const popularity = (entry: Entry) => entry.stars + entry.installs;
+
+// Ties keep getMods order: most stars, then first listed.
+const SORTS: Record<Tab, (a: Entry, b: Entry) => number> = {
+  popular: (a, b) => popularity(b) - popularity(a),
+  hot: (a, b) => b.heat - a.heat || popularity(b) - popularity(a),
+  recent: (a, b) => b.latest.localeCompare(a.latest),
+};
+
+// Matches the half-life in count_install (migration 0004).
+const HOT_HALF_LIFE_MS = 3 * 24 * 60 * 60 * 1000;
 
 // A repo row names this many of its mods, then links to the repo for the rest.
 const SHOWN_MODS = 6;
@@ -16,7 +36,7 @@ const compact = new Intl.NumberFormat("en", { notation: "compact", maximumFracti
 
 export function ModList({ mods }: { mods: ModSummary[] }) {
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<Tab>("top");
+  const [tab, setTab] = useState<Tab>("popular");
   const search = useRef<HTMLInputElement>(null);
 
   // "/" jumps to search, like most developer sites.
@@ -32,26 +52,42 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // Each mod's `hot` is as of its own last install. Decaying them all to the latest install anywhere compares them at one moment.
+  const heats = useMemo(() => {
+    const at = (mod: ModSummary) => (mod.hot_at ? Date.parse(mod.hot_at) : 0);
+    const latest = Math.max(0, ...mods.map(at));
+    return new Map(mods.map((mod) => [mod, mod.hot_at ? mod.hot * 0.5 ** ((latest - at(mod)) / HOT_HALF_LIFE_MS) : 0]));
+  }, [mods]);
+
   const visible = useMemo(() => {
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
     const entries = new Map<string, Entry>();
-    // getMods sorts by stars, so each repo lands in Top order the first time one of its mods shows up.
+    // getMods sorts by stars, so each repo lands in star order the first time one of its mods shows up.
     for (const mod of mods) {
       const haystack = `${mod.name} ${mod.owner}/${mod.repo} ${mod.description ?? ""}`.toLowerCase();
       if (!terms.every((term) => haystack.includes(term))) continue;
       const key = `${mod.owner}/${mod.repo}`;
+      const heat = heats.get(mod) ?? 0;
       const entry = entries.get(key);
       if (entry) {
         entry.mods.push(mod);
+        entry.installs += mod.installs;
+        entry.heat += heat;
         if (mod.created_at > entry.latest) entry.latest = mod.created_at;
       } else {
-        entries.set(key, { owner: mod.owner, repo: mod.repo, stars: mod.stars, latest: mod.created_at, mods: [mod] });
+        entries.set(key, {
+          owner: mod.owner,
+          repo: mod.repo,
+          stars: mod.stars,
+          installs: mod.installs,
+          heat,
+          latest: mod.created_at,
+          mods: [mod],
+        });
       }
     }
-    const matches = [...entries.values()];
-    if (tab === "new") matches.sort((a, b) => b.latest.localeCompare(a.latest));
-    return matches;
-  }, [mods, query, tab]);
+    return [...entries.values()].sort(SORTS[tab]);
+  }, [mods, heats, query, tab]);
 
   // How many mods each repo holds, matching the search or not.
   const totals = useMemo(() => {
@@ -81,26 +117,28 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
           </kbd>
         </label>
         <div role="tablist" aria-label="Sort" className="flex h-10 shrink-0 rounded-lg border border-line p-1">
-          {(["top", "new"] as const).map((value) => (
+          {(Object.keys(TABS) as Tab[]).map((value) => (
             <button
               key={value}
               role="tab"
               type="button"
+              title={TABS[value].hint}
               aria-selected={tab === value}
               onClick={() => setTab(value)}
-              className="rounded-md px-3.5 text-sm text-muted transition-colors hover:text-fg aria-selected:bg-hover aria-selected:text-fg"
+              className="flex-1 rounded-md px-3.5 text-sm text-muted transition-colors hover:text-fg aria-selected:bg-hover aria-selected:text-fg"
             >
-              {value === "top" ? "Top" : "New"}
+              {TABS[value].label}
             </button>
           ))}
         </div>
       </div>
 
       <div className="mt-6">
-        <div className="grid grid-cols-[2.25rem_1fr_auto] gap-4 border-b border-line px-3 pb-2 font-mono text-[11px] tracking-wider text-faint uppercase">
+        <div className={`${COLUMNS} border-b border-line px-3 pb-2 font-mono text-[11px] tracking-wider text-faint uppercase`}>
           <span>#</span>
           <span>Mod</span>
-          <span>Stars</span>
+          <Heading icon={<InstallIcon />} label="Installs" hint="Install commands copied on this site, once per browser" />
+          <Heading icon={<StarIcon />} label="Stars" hint="GitHub stars on the repo" />
         </div>
         {visible.length === 0 ? (
           <p className="px-3 py-10 text-sm text-muted">
@@ -127,7 +165,23 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
   );
 }
 
-const ROW = "grid grid-cols-[2.25rem_1fr_auto] items-center gap-4 border-b border-line px-3 py-3.5 transition-colors hover:bg-subtle";
+// Fixed number columns, so counts line up from row to row.
+const COLUMNS = "grid grid-cols-[1.75rem_1fr_2.75rem_2.75rem] gap-3 sm:grid-cols-[2.25rem_1fr_5.5rem_4.5rem] sm:gap-4";
+const ROW = `${COLUMNS} items-center border-b border-line px-3 py-3.5 transition-colors hover:bg-subtle`;
+
+// On phones the column headings are just icons.
+function Heading({ icon, label, hint }: { icon: ReactNode; label: string; hint: string }) {
+  return (
+    <span title={hint} className="flex items-center justify-end gap-1.5">
+      {icon}
+      <span className="max-sm:sr-only">{label}</span>
+    </span>
+  );
+}
+
+function Count({ value }: { value: number }) {
+  return <span className="text-right font-mono text-sm text-muted tabular-nums">{compact.format(value)}</span>;
+}
 
 function ModRow({ mod, rank }: { mod: ModSummary; rank: number }) {
   return (
@@ -135,14 +189,15 @@ function ModRow({ mod, rank }: { mod: ModSummary; rank: number }) {
       <span className="font-mono text-sm text-faint tabular-nums">{rank}</span>
       <span className="min-w-0">
         <span className="flex min-w-0 items-baseline gap-2.5">
-          <span className="truncate font-medium text-fg">{mod.name}</span>
+          <span className="max-w-full shrink-0 truncate font-medium text-fg">{mod.name}</span>
           <span className="truncate font-mono text-xs text-faint">
             {mod.owner}/{mod.repo}
           </span>
         </span>
         {mod.description && <span className="mt-0.5 block truncate text-sm text-muted">{mod.description}</span>}
       </span>
-      <span className="font-mono text-sm text-muted tabular-nums">{compact.format(mod.stars)}</span>
+      <Count value={mod.installs} />
+      <Count value={mod.stars} />
     </Link>
   );
 }
@@ -157,7 +212,7 @@ function RepoRow({ entry, total, rank }: { entry: Entry; total: number; rank: nu
       <span className="font-mono text-sm text-faint tabular-nums">{rank}</span>
       <span className="min-w-0">
         <span className="flex min-w-0 items-baseline gap-2.5">
-          <Link href={repoHref} className="truncate font-medium text-fg after:absolute after:inset-0">
+          <Link href={repoHref} className="max-w-full shrink-0 truncate font-medium text-fg after:absolute after:inset-0">
             {entry.repo}
           </Link>
           <span className="truncate font-mono text-xs text-faint">
@@ -184,8 +239,28 @@ function RepoRow({ entry, total, rank }: { entry: Entry; total: number; rank: nu
           )}
         </span>
       </span>
-      <span className="font-mono text-sm text-muted tabular-nums">{compact.format(entry.stars)}</span>
+      <Count value={entry.installs} />
+      <Count value={entry.stars} />
     </div>
+  );
+}
+
+function InstallIcon() {
+  return (
+    <svg aria-hidden width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function StarIcon() {
+  return (
+    <svg aria-hidden width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path
+        d="M8 1.75l1.93 3.91 4.32.63-3.13 3.05.74 4.3L8 11.61l-3.86 2.03.74-4.3L1.75 6.29l4.32-.63L8 1.75z"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

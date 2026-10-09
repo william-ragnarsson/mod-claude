@@ -2,7 +2,7 @@
 
 A directory of [Claude Code mods](https://code.claude.com/docs/en/plugins/mods/reference), live at https://www.mod-claude.com.
 
-Anyone can submit a public GitHub repo, with no account. The site finds every mod in it (any folder whose `hooks/hooks.json` has a `modules` entry) and lists it right away. Mods are ranked by the repo's GitHub stars, and a daily job refreshes stars, descriptions and READMEs.
+Anyone can submit a public GitHub repo, with no account. The site finds every mod in it (any folder whose `hooks/hooks.json` has a `modules` entry) and lists it right away. The home page sorts mods by Popular (GitHub stars plus installs), Hot (recent installs, each counting half as much every 3 days) or Recent. An install is someone copying a mod's install command on the site, counted once per browser. A daily job refreshes stars, descriptions and READMEs.
 
 Built with Next.js 16 (Cache Components) and Supabase.
 

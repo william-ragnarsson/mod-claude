@@ -8,6 +8,11 @@ export type ModSummary = {
   name: string;
   description: string | null;
   stars: number;
+  // Copies of an install command on this site, once per browser.
+  installs: number;
+  // Installs decayed to hot_at, the last one: each counts half as much for every 3 days since (count_install, migration 0004).
+  hot: number;
+  hot_at: string | null;
   created_at: string;
 };
 
@@ -22,11 +27,12 @@ export type Mod = ModSummary & {
   updated_at: string;
 };
 
-const SUMMARY_COLUMNS = "owner, repo, slug, name, description, stars, created_at";
+const SUMMARY_COLUMNS = "owner, repo, slug, name, description, stars, installs, hot, hot_at, created_at";
 
 export async function getMods(): Promise<ModSummary[]> {
   "use cache";
-  cacheTag("mods");
+  // Counting an install refreshes the "installs" tag, so the home page's counts don't wait out the hour.
+  cacheTag("mods", "installs");
   cacheLife("hours");
 
   const { data, error } = await publicClient()
