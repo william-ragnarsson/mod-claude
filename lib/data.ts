@@ -14,8 +14,9 @@ export type ModSummary = {
 export type Mod = ModSummary & {
   path: string;
   default_branch: string;
-  install_name: string | null;
-  marketplace: string | null;
+  // Ingest only stores mods its repo's marketplace lists, so both are set.
+  install_name: string;
+  marketplace: string;
   readme: string | null;
   readme_path: string | null;
   updated_at: string;
@@ -54,24 +55,32 @@ export async function getMod(owner: string, repo: string, slug: string): Promise
   return data;
 }
 
+/** Every mod one repo holds, by name. */
+export async function getRepoMods(owner: string, repo: string): Promise<ModSummary[]> {
+  "use cache";
+  cacheTag("mods");
+  cacheLife("hours");
+
+  const { data, error } = await publicClient()
+    .from("mods")
+    .select(SUMMARY_COLUMNS)
+    .eq("owner", owner)
+    .eq("repo", repo)
+    .order("name", { ascending: true })
+    .limit(500);
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 /** What to paste to install a mod, as labeled groups of commands run in order. */
 export function installCommands(mod: Mod): { label: string; commands: string[] }[] {
   const repo = `${mod.owner}/${mod.repo}`;
-  if (mod.install_name && mod.marketplace) {
-    const plugin = `${mod.install_name}@${mod.marketplace}`;
-    return [
-      { label: "In Claude Code", commands: [`/plugin marketplace add ${repo}`, `/plugin install ${plugin}`] },
-      {
-        label: "Or from your shell",
-        commands: [`claude plugin marketplace add ${repo} && claude plugin install ${plugin}`],
-      },
-    ];
-  }
-  const dir = mod.path ? `./${mod.repo}/${mod.path}` : `./${mod.repo}`;
+  const plugin = `${mod.install_name}@${mod.marketplace}`;
   return [
+    { label: "In Claude Code", commands: [`/plugin marketplace add ${repo}`, `/plugin install ${plugin}`] },
     {
-      label: "From a clone",
-      commands: [`git clone https://github.com/${repo}`, `claude --plugin-dir ${dir}`],
+      label: "Or from your shell",
+      commands: [`claude plugin marketplace add ${repo} && claude plugin install ${plugin}`],
     },
   ];
 }

@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 
-export function CopyCommand({ command, prompt = "$" }: { command: string; prompt?: string }) {
+type Props = { command: string; prompt?: string; onCopy?: () => void };
+
+export function CopyCommand({ command, prompt = "$", onCopy }: Props) {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -15,6 +17,7 @@ export function CopyCommand({ command, prompt = "$" }: { command: string; prompt
     try {
       await navigator.clipboard.writeText(command);
       setCopied(true);
+      onCopy?.();
     } catch {
       // Clipboard can be blocked (insecure origin, permissions). The command is still selectable.
     }

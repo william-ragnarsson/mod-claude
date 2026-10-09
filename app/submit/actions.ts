@@ -25,6 +25,8 @@ export async function submitRepo(_previous: SubmitState, formData: FormData): Pr
     updateTag("mods");
     return { status: "done", ...result };
   } catch (error) {
+    // An IngestError also removes the repo's old rows, so the list needs refreshing.
+    if (error instanceof IngestError) updateTag("mods");
     if (error instanceof IngestError || error instanceof GitHubError) {
       return { status: "error", message: error.message, input };
     }

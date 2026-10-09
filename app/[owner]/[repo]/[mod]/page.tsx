@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
-import { CopyCommand } from "@/components/CopyCommand";
+import Link from "next/link";
 import { Markdown } from "@/components/Markdown";
 import { getMod, getMods, installCommands } from "@/lib/data";
+import { InstallCommands } from "./InstallCommands";
 
 // Prerender the most popular mods at build time. The rest render on first visit and are then cached.
 export async function generateStaticParams() {
@@ -68,9 +69,9 @@ async function ModDetails({ params }: Pick<PageProps<"/[owner]/[repo]/[mod]">, "
           {mod.owner}
         </a>
         <span>/</span>
-        <a href={repoUrl} className="transition-colors hover:text-fg">
+        <Link href={`/${mod.owner}/${mod.repo}`} className="transition-colors hover:text-fg">
           {mod.repo}
-        </a>
+        </Link>
         <span>/</span>
         <span className="text-muted">{mod.slug}</span>
       </nav>
@@ -82,18 +83,7 @@ async function ModDetails({ params }: Pick<PageProps<"/[owner]/[repo]/[mod]">, "
         <h2 id="install" className="mb-3 text-sm font-medium text-fg">
           Install
         </h2>
-        <div className="space-y-5">
-          {installCommands(mod).map(({ label, commands }) => (
-            <div key={label}>
-              <p className="mb-1.5 text-xs text-faint">{label}</p>
-              <div className="space-y-2">
-                {commands.map((command) => (
-                  <CopyCommand key={command} command={command} prompt={command.startsWith("/") ? ">" : "$"} />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+        <InstallCommands owner={mod.owner} repo={mod.repo} slug={mod.slug} groups={installCommands(mod)} />
       </section>
 
       <div className="mt-12 grid gap-10 border-t border-line pt-10 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-14">
