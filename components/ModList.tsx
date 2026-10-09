@@ -10,6 +10,8 @@ const TABS = {
   recent: { label: "Recent", hint: "Newest on the site" },
 };
 type Tab = keyof typeof TABS;
+// The Installs and Stars column headings sort by their column.
+type Sort = Tab | "installs" | "stars";
 
 /**
  * One row on the list: a repo, with every mod of it that matches the search. Stars belong to the repo, so they count once.
@@ -20,10 +22,12 @@ type Entry = { owner: string; repo: string; stars: number; installs: number; hea
 const popularity = (entry: Entry) => entry.stars + entry.installs;
 
 // Ties keep getMods order: most stars, then first listed.
-const SORTS: Record<Tab, (a: Entry, b: Entry) => number> = {
+const SORTS: Record<Sort, (a: Entry, b: Entry) => number> = {
   popular: (a, b) => popularity(b) - popularity(a),
   hot: (a, b) => b.heat - a.heat || popularity(b) - popularity(a),
   recent: (a, b) => b.latest.localeCompare(a.latest),
+  installs: (a, b) => b.installs - a.installs || b.stars - a.stars,
+  stars: (a, b) => b.stars - a.stars || b.installs - a.installs,
 };
 
 // Matches the half-life in count_install (migration 0004).
@@ -32,11 +36,17 @@ const HOT_HALF_LIFE_MS = 3 * 24 * 60 * 60 * 1000;
 // A repo row names this many of its mods, then links to the repo for the rest.
 const SHOWN_MODS = 6;
 
-const compact = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
+// 2.1k and 12.3k, but 357k rather than 357.1k, so counts fit the phone column.
+const compact = new Intl.NumberFormat("en", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+  maximumSignificantDigits: 3,
+  roundingPriority: "lessPrecision",
+});
 
 export function ModList({ mods }: { mods: ModSummary[] }) {
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<Tab>("popular");
+  const [sort, setSort] = useState<Sort>("popular");
   const search = useRef<HTMLInputElement>(null);
 
   // "/" jumps to search, like most developer sites.
@@ -86,8 +96,8 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
         });
       }
     }
-    return [...entries.values()].sort(SORTS[tab]);
-  }, [mods, heats, query, tab]);
+    return [...entries.values()].sort(SORTS[sort]);
+  }, [mods, heats, query, sort]);
 
   // How many mods each repo holds, matching the search or not.
   const totals = useMemo(() => {
@@ -123,8 +133,8 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
               role="tab"
               type="button"
               title={TABS[value].hint}
-              aria-selected={tab === value}
-              onClick={() => setTab(value)}
+              aria-selected={sort === value}
+              onClick={() => setSort(value)}
               className="flex-1 rounded-md px-3.5 text-sm text-muted transition-colors hover:text-fg aria-selected:bg-hover aria-selected:text-fg"
             >
               {TABS[value].label}
@@ -137,8 +147,20 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
         <div className={`${COLUMNS} border-b border-line px-3 pb-2 font-mono text-[11px] tracking-wider text-faint uppercase`}>
           <span>#</span>
           <span>Mod</span>
-          <Heading icon={<InstallIcon />} label="Installs" hint="Install commands copied on this site, once per browser" />
-          <Heading icon={<StarIcon />} label="Stars" hint="GitHub stars on the repo" />
+          <Heading
+            icon={<InstallIcon />}
+            label="Installs"
+            hint="Sort by installs: install commands copied on this site, once per browser"
+            active={sort === "installs"}
+            onClick={() => setSort("installs")}
+          />
+          <Heading
+            icon={<StarIcon />}
+            label="Stars"
+            hint="Sort by GitHub stars on the repo"
+            active={sort === "stars"}
+            onClick={() => setSort("stars")}
+          />
         </div>
         {visible.length === 0 ? (
           <p className="px-3 py-10 text-sm text-muted">
@@ -169,18 +191,29 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
 const COLUMNS = "grid grid-cols-[1.75rem_1fr_2.75rem_2.75rem] gap-3 sm:grid-cols-[2.25rem_1fr_5.5rem_4.5rem] sm:gap-4";
 const ROW = `${COLUMNS} items-center border-b border-line px-3 py-3.5 transition-colors hover:bg-subtle`;
 
-// On phones the column headings are just icons.
-function Heading({ icon, label, hint }: { icon: ReactNode; label: string; hint: string }) {
+type HeadingProps = { icon: ReactNode; label: string; hint: string; active: boolean; onClick: () => void };
+
+// On phones the column headings are just icons. The sort arrow hangs off the left, so it doesn't push the label.
+function Heading({ icon, label, hint, active, onClick }: HeadingProps) {
   return (
-    <span title={hint} className="flex items-center justify-end gap-1.5">
+    <button
+      type="button"
+      title={hint}
+      aria-pressed={active}
+      onClick={onClick}
+      className="group relative flex items-center justify-end gap-1.5 uppercase transition-colors hover:text-muted aria-pressed:text-fg"
+    >
+      <SortIcon />
       {icon}
       <span className="max-sm:sr-only">{label}</span>
-    </span>
+    </button>
   );
 }
 
 function Count({ value }: { value: number }) {
-  return <span className="text-right font-mono text-sm text-muted tabular-nums">{compact.format(value)}</span>;
+  return (
+    <span className="text-right font-mono text-sm text-muted tabular-nums">{compact.format(value).toLowerCase()}</span>
+  );
 }
 
 function ModRow({ mod, rank }: { mod: ModSummary; rank: number }) {
@@ -249,6 +282,23 @@ function InstallIcon() {
   return (
     <svg aria-hidden width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
       <path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function SortIcon() {
+  return (
+    <svg
+      aria-hidden
+      width="10"
+      height="10"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      className="absolute right-full mr-1 opacity-0 transition-opacity group-hover:opacity-60 group-aria-pressed:opacity-100"
+    >
+      <path d="M8 2.5v11M3.5 9 8 13.5 12.5 9" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

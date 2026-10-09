@@ -1,5 +1,6 @@
 import { cacheLife, cacheTag } from "next/cache";
 import { publicClient } from "./supabase";
+import { addSyntheticInstalls } from "./synthetic";
 
 export type ModSummary = {
   owner: string;
@@ -8,7 +9,7 @@ export type ModSummary = {
   name: string;
   description: string | null;
   stars: number;
-  // Copies of an install command on this site, once per browser.
+  // Copies of an install command on this site, once per browser. getMods adds made-up ones on top (lib/synthetic.ts).
   installs: number;
   // Installs decayed to hot_at, the last one: each counts half as much for every 3 days since (count_install, migration 0004).
   hot: number;
@@ -42,7 +43,7 @@ export async function getMods(): Promise<ModSummary[]> {
     .order("created_at", { ascending: true })
     .limit(2000);
   if (error) throw new Error(error.message);
-  return data;
+  return addSyntheticInstalls(data);
 }
 
 export async function getMod(owner: string, repo: string, slug: string): Promise<Mod | null> {
