@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
+import { SITE } from "@/lib/site";
 import { SubmitForm } from "./SubmitForm";
+
+const description = "Add a Claude Code mod to the directory. Paste a public GitHub repo, no account needed.";
 
 export const metadata: Metadata = {
   title: "Submit a mod",
-  description: "Add a Claude Code mod to the directory. Paste a public GitHub repo, no account needed.",
+  description,
   alternates: { canonical: "/submit" },
+  openGraph: { siteName: SITE.name, title: "Submit a mod", description, url: "/submit" },
 };
 
 export default function SubmitPage() {

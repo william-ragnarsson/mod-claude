@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { getMods, getRepoMods } from "@/lib/data";
+import { SITE } from "@/lib/site";
 
 // Prerender every listed repo at build time. New ones render on first visit and are then cached.
 export async function generateStaticParams() {
@@ -22,7 +23,7 @@ export async function generateMetadata({ params }: PageProps<"/[owner]/[repo]">)
     title: `${repo} by ${owner}`,
     description,
     alternates: { canonical: url },
-    openGraph: { title: repo, description, url },
+    openGraph: { siteName: SITE.name, title: repo, description, url },
   };
 }
 
