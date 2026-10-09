@@ -1,13 +1,14 @@
 "use client";
 
 import { InstallTabs } from "@/components/InstallTabs";
+import type { InstallGroup } from "@/lib/data";
 import { countInstall } from "./actions";
 
 type Props = {
   owner: string;
   repo: string;
   slug: string;
-  groups: { label: string; commands: string[] }[];
+  groups: InstallGroup[];
 };
 
 export function InstallCommands({ owner, repo, slug, groups }: Props) {
