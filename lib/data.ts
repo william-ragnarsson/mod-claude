@@ -72,12 +72,42 @@ export async function getRepoMods(owner: string, repo: string): Promise<ModSumma
   return data;
 }
 
-/** What to paste to install a mod, as labeled groups of commands run in order. */
-export function installCommands(mod: Mod): { label: string; commands: string[] }[] {
+/**
+ * One way to install a mod: commands pasted one at a time, or numbered steps
+ * where the app has no command line, each with anything to paste attached.
+ */
+export type InstallGroup =
+  | { label: string; hint: string; commands: string[] }
+  | { label: string; steps: { text: string; copy?: string }[] };
+
+/** How to install a mod from each place people run Claude Code. */
+export function installCommands(mod: Mod): InstallGroup[] {
   const repo = `${mod.owner}/${mod.repo}`;
   const plugin = `${mod.install_name}@${mod.marketplace}`;
   return [
-    { label: "Claude Code", commands: [`/plugin marketplace add ${repo}`, `/plugin install ${plugin}`] },
-    { label: "Terminal", commands: [`claude plugin marketplace add ${repo}`, `claude plugin install ${plugin}`] },
+    {
+      label: "Claude Code CLI",
+      hint: "Paste into a Claude Code session in your terminal, one line at a time.",
+      commands: [`/plugin marketplace add ${repo}`, `/plugin install ${plugin}`],
+    },
+    {
+      // The desktop chat box doesn't take /plugin, and the app's Claude Code isn't on PATH as `claude`.
+      // Claude's shell in a desktop session points CLAUDE_CODE_EXECPATH at it, so Claude runs the install.
+      label: "Desktop app",
+      steps: [
+        { text: "Open the Code tab in the Claude desktop app and start a session in any folder." },
+        {
+          text: "Send Claude this message. It installs the mod with the app's built-in Claude Code. Approve the command if Claude asks.",
+          copy: `Install the Claude Code mod "${mod.install_name}" by running: "$CLAUDE_CODE_EXECPATH" plugin install ${mod.install_name} --marketplace ${repo}`,
+        },
+        { text: "Start a new session to load the mod: ⌘N on Mac, Ctrl+N on Windows, or New session in the sidebar." },
+        { text: "To turn it off or remove it later, click + next to the prompt box, then Plugins → Manage plugins." },
+      ],
+    },
+    {
+      label: "Shell",
+      hint: "Run in any terminal where the claude command is installed.",
+      commands: [`claude plugin marketplace add ${repo}`, `claude plugin install ${plugin}`],
+    },
   ];
 }
