@@ -20,7 +20,8 @@ export const metadata: Metadata = {
   title: { default: SITE.title, template: `%s · ${SITE.name}` },
   description: SITE.tagline,
   openGraph: { type: "website", siteName: SITE.name, title: SITE.title, description: SITE.tagline, url: "/" },
-  twitter: { card: "summary", title: SITE.title, description: SITE.tagline },
+  // No title or description here: X falls back to each page's og: tags, so a shared mod shows its own name.
+  twitter: { card: "summary_large_image" },
 };
 
 export const viewport: Viewport = {

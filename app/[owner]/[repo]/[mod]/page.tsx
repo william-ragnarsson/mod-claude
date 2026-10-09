@@ -4,6 +4,7 @@ import { Suspense, type ReactNode } from "react";
 import Link from "next/link";
 import { Markdown } from "@/components/Markdown";
 import { getMod, getMods, installCommands } from "@/lib/data";
+import { SITE } from "@/lib/site";
 import { InstallCommands } from "./InstallCommands";
 
 // Prerender the most popular mods at build time. The rest render on first visit and are then cached.
@@ -24,7 +25,7 @@ export async function generateMetadata({ params }: PageProps<"/[owner]/[repo]/[m
     title: `${mod.name} by ${mod.owner}`,
     description,
     alternates: { canonical: url },
-    openGraph: { title: mod.name, description, url },
+    openGraph: { siteName: SITE.name, title: mod.name, description, url },
   };
 }
 
