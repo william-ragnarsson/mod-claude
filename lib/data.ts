@@ -60,17 +60,14 @@ export function installCommands(mod: Mod): { label: string; commands: string[] }
   if (mod.install_name && mod.marketplace) {
     const plugin = `${mod.install_name}@${mod.marketplace}`;
     return [
-      { label: "In Claude Code", commands: [`/plugin marketplace add ${repo}`, `/plugin install ${plugin}`] },
-      {
-        label: "Or from your shell",
-        commands: [`claude plugin marketplace add ${repo} && claude plugin install ${plugin}`],
-      },
+      { label: "Claude Code", commands: [`/plugin marketplace add ${repo}`, `/plugin install ${plugin}`] },
+      { label: "Terminal", commands: [`claude plugin marketplace add ${repo}`, `claude plugin install ${plugin}`] },
     ];
   }
   const dir = mod.path ? `./${mod.repo}/${mod.path}` : `./${mod.repo}`;
   return [
     {
-      label: "From a clone",
+      label: "Terminal",
       commands: [`git clone https://github.com/${repo}`, `claude --plugin-dir ${dir}`],
     },
   ];
