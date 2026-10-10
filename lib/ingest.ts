@@ -1,7 +1,9 @@
-import { getFilePaths, getRawFile, getRepo, parseRepoUrl, type RepoInfo } from "./github";
+import * as github from "./github";
+import * as gitlab from "./gitlab";
+import { parseRepoUrl, repoName, storedOwner, type RepoInfo, type RepoRef } from "./hosts";
 import { adminClient } from "./supabase";
 
-export type ModRef = { owner: string; repo: string; slug: string; name: string };
+export type ModRef = RepoRef & { slug: string; name: string };
 export type IngestResult = { added: ModRef[]; existing: ModRef[]; removed: ModRef[] };
 
 /** An error whose message is safe to show to the person who submitted the repo. */
@@ -26,12 +28,15 @@ export type FoundMod = {
   marketplace: string | null;
   readme: string | null;
   readmePath: string | null;
-  /** "owner/repo" when the manifest says the mod comes from someone else's repo. Copies aren't listed. */
+  /** The repo's name (lib/hosts.ts repoName) when the manifest says the mod comes from someone else's repo. Copies aren't listed. */
   copyOf: string | null;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Json = any;
+
+// Each host's module reads repos the same way.
+const HOST_APIS = { github, gitlab };
 
 function parseJson(text: string | null): Json {
   if (!text) return null;
@@ -61,13 +66,19 @@ function joinPath(...parts: string[]): string {
   return segments.join("/");
 }
 
-/** The repo a vendored mod was copied from: the manifest's repository (or homepage) when another owner's. */
+/**
+ * The account a repo belongs to: its owner, or on GitLab the top-level group, so sibling subgroups count as one.
+ * The host is left out: the same name on GitHub and GitLab is taken to be the same person mirroring their own repo.
+ */
+const account = ({ owner }: RepoRef) => owner.split("/")[0].toLowerCase();
+
+/** The repo a vendored mod was copied from: the manifest's repository (or homepage) when it belongs to another account. */
 function findCopySource(manifest: Json, repo: RepoInfo): string | null {
   const repository = manifest?.repository?.url ?? manifest?.repository;
   const link = typeof repository === "string" ? repository : manifest?.homepage;
   const source = typeof link === "string" ? parseRepoUrl(link) : null;
-  if (!source || source.owner.toLowerCase() === repo.owner.toLowerCase()) return null;
-  return `${source.owner}/${source.repo}`;
+  if (!source || account(source) === account(repo)) return null;
+  return repoName(source);
 }
 
 function findReadme(files: string[], dir: string): string | null {
@@ -98,7 +109,7 @@ async function readMod(
   hooksPath: string,
   marketplace: Json,
 ): Promise<FoundMod | null> {
-  const raw = (path: string) => getRawFile(repo.owner, repo.repo, repo.defaultBranch, path);
+  const raw = (path: string) => HOST_APIS[repo.host].getRawFile(repo.owner, repo.repo, repo.defaultBranch, path);
 
   // A mod is a plugin whose hooks/hooks.json names a hooks module under "modules", and that module
   // exports register(). Plugins with only command hooks, skills or agents have no such module.
@@ -140,23 +151,23 @@ async function readMod(
 }
 
 /**
- * Finds every listable mod in a public GitHub repo, without saving anything. Skipped: `copies`, mods vendored
- * from other repos, and `unlisted`, mods the repo's top-level marketplace file doesn't list, so they can't be
- * installed with `/plugin marketplace add <owner>/<repo>` and `/plugin install`.
+ * Finds every listable mod in a public GitHub or GitLab repo, without saving anything. Skipped: `copies`, mods
+ * vendored from other repos, and `unlisted`, mods the repo's top-level marketplace file doesn't list, so they can't
+ * be installed with `/plugin marketplace add <repo>` and `/plugin install`.
  */
 export async function findMods(
-  owner: string,
-  repo: string,
+  ref: RepoRef,
 ): Promise<{ repo: RepoInfo; mods: FoundMod[]; copies: FoundMod[]; unlisted: FoundMod[] }> {
-  const info = await getRepo(owner, repo);
+  const api = HOST_APIS[ref.host];
+  const info = await api.getRepo(ref.owner, ref.repo);
   if (!info) throw new IngestError("Repo not found or private.");
 
-  const files = await getFilePaths(info.owner, info.repo, info.defaultBranch);
+  const files = await api.getFilePaths(info.owner, info.repo, info.defaultBranch);
   const hookFiles = files
     .filter((file) => HOOKS_FILE.test(file) && !SKIPPED_DIR.test(file))
     .slice(0, MAX_MODS);
   const marketplace = files.includes(MARKETPLACE_FILE)
-    ? parseJson(await getRawFile(info.owner, info.repo, info.defaultBranch, MARKETPLACE_FILE))
+    ? parseJson(await api.getRawFile(info.owner, info.repo, info.defaultBranch, MARKETPLACE_FILE))
     : null;
 
   const found = (await Promise.all(hookFiles.map((path) => readMod(info, files, path, marketplace)))).filter(
@@ -187,9 +198,13 @@ export async function findMods(
 }
 
 /** Deletes a repo's rows, or only the ones whose slug isn't in `keep`. Returns what it deleted. */
-async function removeMods(owner: string, repo: string, keep = new Set<string>()): Promise<ModRef[]> {
+async function removeMods({ host, owner, repo }: RepoRef, keep = new Set<string>()): Promise<ModRef[]> {
   const db = adminClient();
-  const { data: rows, error } = await db.from("mods").select("id, slug, name").eq("owner", owner).eq("repo", repo);
+  const { data: rows, error } = await db
+    .from("mods")
+    .select("id, slug, name")
+    .eq("owner", storedOwner({ host, owner }))
+    .eq("repo", repo);
   if (error) throw new Error(error.message);
   const gone = rows.filter((row) => !keep.has(row.slug.toLowerCase()));
   if (gone.length > 0) {
@@ -197,20 +212,21 @@ async function removeMods(owner: string, repo: string, keep = new Set<string>())
     const { error } = await db.from("mods").delete().in("id", ids);
     if (error) throw new Error(error.message);
   }
-  return gone.map((row) => ({ owner, repo, slug: row.slug, name: row.name }));
+  return gone.map((row) => ({ host, owner, repo, slug: row.slug, name: row.name }));
 }
 
 /**
- * Adds or refreshes every mod in a public GitHub repo, and removes the repo's rows that are no longer listable
- * (deleted, renamed, copies, or dropped from the marketplace). Used by the submit form, the seed script and the daily refresh.
+ * Adds or refreshes every mod in a public GitHub or GitLab repo, and removes the repo's rows that are no longer
+ * listable (deleted, renamed, copies, or dropped from the marketplace). Used by the submit form, the seed script
+ * and the daily refresh.
  */
-export async function ingestRepo(owner: string, repo: string): Promise<IngestResult> {
+export async function ingestRepo(ref: RepoRef): Promise<IngestResult> {
   let found: Awaited<ReturnType<typeof findMods>>;
   try {
-    found = await findMods(owner, repo);
+    found = await findMods(ref);
   } catch (error) {
     // The repo is gone, private, or has no mods left. Network and rate-limit errors aren't IngestErrors.
-    if (error instanceof IngestError) await removeMods(owner, repo);
+    if (error instanceof IngestError) await removeMods(ref);
     throw error;
   }
   const { repo: info, mods } = found;
@@ -219,14 +235,14 @@ export async function ingestRepo(owner: string, repo: string): Promise<IngestRes
   const { data: rows, error } = await db
     .from("mods")
     .select("id, slug")
-    .eq("owner", info.owner)
+    .eq("owner", storedOwner(info))
     .eq("repo", info.repo);
   if (error) throw new Error(error.message);
   const existingIds = new Map(rows.map((row) => [row.slug.toLowerCase(), row.id as string]));
 
   const now = new Date().toISOString();
   const toRow = (mod: FoundMod) => ({
-    owner: info.owner,
+    owner: storedOwner(info),
     repo: info.repo,
     slug: mod.slug,
     name: mod.name,
@@ -244,10 +260,10 @@ export async function ingestRepo(owner: string, repo: string): Promise<IngestRes
   const result: IngestResult = {
     added: [],
     existing: [],
-    removed: await removeMods(info.owner, info.repo, new Set(mods.map((mod) => mod.slug))),
+    removed: await removeMods(info, new Set(mods.map((mod) => mod.slug))),
   };
   for (const mod of mods) {
-    const ref = { owner: info.owner, repo: info.repo, slug: mod.slug, name: mod.name };
+    const ref = { host: info.host, owner: info.owner, repo: info.repo, slug: mod.slug, name: mod.name };
     const id = existingIds.get(mod.slug);
     if (id) {
       const { error } = await db.from("mods").update(toRow(mod)).eq("id", id);

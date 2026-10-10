@@ -1,25 +1,8 @@
+import { rawUrl, type RepoInfo } from "./hosts";
+
 const API = "https://api.github.com";
 
-export type RepoInfo = {
-  owner: string;
-  repo: string;
-  description: string | null;
-  stars: number;
-  defaultBranch: string;
-};
-
 export class GitHubError extends Error {}
-
-/** Accepts github.com URLs (any depth), git URLs, or plain "owner/repo". */
-export function parseRepoUrl(input: string): { owner: string; repo: string } | null {
-  const s = input.trim();
-  const m =
-    s.match(/github\.com[/:]([\w.-]+)\/([\w.-]+)/i) ?? s.match(/^([\w.-]+)\/([\w.-]+)\/?$/);
-  if (!m) return null;
-  const repo = m[2].replace(/\.git$/i, "");
-  if ([m[1], repo].some((part) => part === "." || part === "..")) return null;
-  return { owner: m[1], repo };
-}
 
 function apiHeaders(): HeadersInit {
   const headers: Record<string, string> = {
@@ -47,6 +30,7 @@ export async function getRepo(owner: string, repo: string): Promise<RepoInfo | n
   if (data.private) return null;
   const [canonicalOwner, canonicalRepo] = String(data.full_name).split("/");
   return {
+    host: "github",
     owner: canonicalOwner,
     repo: canonicalRepo,
     description: data.description ?? null,
@@ -67,11 +51,6 @@ export async function getFilePaths(owner: string, repo: string, branch: string):
     .map((entry: { path: string }) => entry.path);
 }
 
-export function rawUrl(owner: string, repo: string, branch: string, path: string): string {
-  const encoded = path.split("/").map(encodeURIComponent).join("/");
-  return `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(branch)}/${encoded}`;
-}
-
 /** Raw file contents, or null when the file doesn't exist. Doesn't count against the API rate limit. */
 export async function getRawFile(
   owner: string,
@@ -79,7 +58,7 @@ export async function getRawFile(
   branch: string,
   path: string,
 ): Promise<string | null> {
-  const res = await fetch(rawUrl(owner, repo, branch, path), { cache: "no-store" });
+  const res = await fetch(rawUrl({ host: "github", owner, repo }, branch, path), { cache: "no-store" });
   if (res.status === 404) return null;
   // Any other failure throws, so a GitHub hiccup can't make a mod look deleted.
   if (!res.ok) throw new GitHubError(`Couldn't read ${path} (GitHub returned ${res.status}).`);

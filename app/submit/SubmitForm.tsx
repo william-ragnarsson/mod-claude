@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
+import { modHref, repoName } from "@/lib/hosts";
 import type { ModRef } from "@/lib/ingest";
 import { submitRepo, type SubmitState } from "./actions";
 
@@ -14,13 +15,13 @@ export function SubmitForm() {
     <div>
       <form action={action} className="flex flex-col gap-3 sm:flex-row">
         <label className="flex-1">
-          <span className="sr-only">GitHub repository</span>
+          <span className="sr-only">GitHub or GitLab repository</span>
           <input
             name="repo"
             required
             maxLength={300}
             defaultValue={state.status === "error" ? state.input : ""}
-            placeholder="github.com/owner/repo"
+            placeholder="github.com/owner/repo or gitlab.com/group/project"
             autoComplete="off"
             autoCapitalize="off"
             spellCheck={false}
@@ -65,15 +66,13 @@ function ModLinks({ title, mods }: { title: string; mods: ModRef[] }) {
       <p className="mb-2 text-muted">{title}</p>
       <ul className="divide-y divide-line rounded-lg border border-line">
         {mods.map((mod) => (
-          <li key={mod.slug}>
+          <li key={`${repoName(mod)}/${mod.slug}`}>
             <Link
-              href={`/${mod.owner}/${mod.repo}/${mod.slug}`}
+              href={modHref(mod)}
               className="flex items-baseline justify-between gap-4 px-3.5 py-3 transition-colors hover:bg-subtle"
             >
               <span className="truncate font-medium text-fg">{mod.name}</span>
-              <span className="truncate font-mono text-xs text-faint">
-                {mod.owner}/{mod.repo}
-              </span>
+              <span className="truncate font-mono text-xs text-faint">{repoName(mod)}</span>
             </Link>
           </li>
         ))}

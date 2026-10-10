@@ -2,26 +2,26 @@
 
 import { InstallTabs } from "@/components/InstallTabs";
 import type { InstallGroup } from "@/lib/data";
-import { countInstall } from "./actions";
+import { repoName, type RepoRef } from "@/lib/hosts";
+import { countInstall } from "@/lib/installs";
 
 type Props = {
-  owner: string;
-  repo: string;
-  slug: string;
+  mod: RepoRef & { slug: string };
   groups: InstallGroup[];
 };
 
-export function InstallCommands({ owner, repo, slug, groups }: Props) {
+export function InstallCommands({ mod, groups }: Props) {
   // One install per browser per mod, however many of its commands get copied.
   function onCopy() {
-    const key = `installed:${owner}/${repo}/${slug}`;
+    // GitHub mods keep the "owner/repo" key they always had, so browsers that already counted don't count again.
+    const key = `installed:${repoName(mod)}/${mod.slug}`;
     try {
       if (localStorage.getItem(key)) return;
       localStorage.setItem(key, "1");
     } catch {
       // Storage can be blocked (private windows). Count the copy anyway.
     }
-    countInstall(owner, repo, slug).catch(() => {});
+    countInstall(mod.host, mod.owner, mod.repo, mod.slug).catch(() => {});
   }
 
   return <InstallTabs groups={groups} onCopy={onCopy} />;

@@ -1,7 +1,9 @@
 "use server";
 
 import { updateTag } from "next/cache";
-import { GitHubError, parseRepoUrl } from "@/lib/github";
+import { GitHubError } from "@/lib/github";
+import { GitLabError } from "@/lib/gitlab";
+import { parseRepoUrl } from "@/lib/hosts";
 import { IngestError, ingestRepo, type ModRef } from "@/lib/ingest";
 
 export type SubmitState =
@@ -17,17 +19,17 @@ export async function submitRepo(_previous: SubmitState, formData: FormData): Pr
 
   const parsed = parseRepoUrl(input);
   if (!parsed) {
-    return { status: "error", message: "Enter a GitHub repo, like github.com/owner/repo.", input };
+    return { status: "error", message: "Enter a GitHub or GitLab repo, like github.com/owner/repo or gitlab.com/group/project.", input };
   }
 
   try {
-    const result = await ingestRepo(parsed.owner, parsed.repo);
+    const result = await ingestRepo(parsed);
     updateTag("mods");
     return { status: "done", ...result };
   } catch (error) {
     // An IngestError also removes the repo's old rows, so the list needs refreshing.
     if (error instanceof IngestError) updateTag("mods");
-    if (error instanceof IngestError || error instanceof GitHubError) {
+    if (error instanceof IngestError || error instanceof GitHubError || error instanceof GitLabError) {
       return { status: "error", message: error.message, input };
     }
     console.error("submit failed", parsed, error);
