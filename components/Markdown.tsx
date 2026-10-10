@@ -2,12 +2,13 @@ import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
-import { rawUrl } from "@/lib/github";
+import { blobUrl, rawUrl, type RepoRef } from "@/lib/hosts";
 
-type Source = { owner: string; repo: string; branch: string; path: string | null };
+type Source = RepoRef & { branch: string; path: string | null };
 
 const ABSOLUTE = /^([a-z][a-z0-9+.-]*:|\/\/)/i;
 const GITHUB_BLOB = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/(.+)$/;
+const GITLAB_BLOB = /^(https:\/\/gitlab\.com\/.+?)\/-\/blob\/(.+)$/;
 
 /** Resolves `target` against the directory `base`, handling "." and "..". */
 function resolvePath(base: string, target: string): string {
@@ -28,12 +29,14 @@ function safeDecode(value: string): string {
   }
 }
 
-/** README links are written relative to the README's folder on GitHub. Point them back at GitHub. */
+/** README links are written relative to the README's folder in the repo. Point them back at the repo's host. */
 function transformUrl(url: string, key: string, source: Source): string | null | undefined {
   if (ABSOLUTE.test(url) || url.startsWith("#") || url === "") {
-    // Images linked to a GitHub file page only render through the /raw/ route.
+    // Images linked to a file page on either host only render through the /raw/ route.
     const blob = key === "src" ? url.match(GITHUB_BLOB) : null;
     if (blob) return `https://github.com/${blob[1]}/${blob[2]}/raw/${blob[3]}`;
+    const gitlabBlob = key === "src" ? url.match(GITLAB_BLOB) : null;
+    if (gitlabBlob) return `${gitlabBlob[1]}/-/raw/${gitlabBlob[2]}`;
     return defaultUrlTransform(url);
   }
 
@@ -43,9 +46,8 @@ function transformUrl(url: string, key: string, source: Source): string | null |
   const readmeDir = source.path?.includes("/") ? source.path.slice(0, source.path.lastIndexOf("/")) : "";
   const filePath = resolvePath(readmeDir, safeDecode(pathPart));
 
-  if (key === "src") return rawUrl(source.owner, source.repo, source.branch, filePath);
-  const encoded = filePath.split("/").map(encodeURIComponent).join("/");
-  return `https://github.com/${source.owner}/${source.repo}/blob/${encodeURIComponent(source.branch)}/${encoded}${suffix}`;
+  if (key === "src") return rawUrl(source, source.branch, filePath);
+  return `${blobUrl(source, source.branch, filePath)}${suffix}`;
 }
 
 /** `srcset` is a list of "url descriptor" pairs, which react-markdown leaves alone. Resolve each url like a `src`. */

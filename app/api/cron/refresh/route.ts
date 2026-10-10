@@ -1,5 +1,6 @@
 import { revalidateTag } from "next/cache";
 import type { NextRequest } from "next/server";
+import { fromStored, repoName } from "@/lib/hosts";
 import { ingestRepo } from "@/lib/ingest";
 import { adminClient } from "@/lib/supabase";
 
@@ -15,13 +16,13 @@ export async function GET(request: NextRequest) {
   const { data, error } = await adminClient().from("mods").select("owner, repo");
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
-  const repos = [...new Map(data.map((row) => [`${row.owner}/${row.repo}`.toLowerCase(), row])).values()];
+  const repos = [...new Map(data.map(fromStored).map((ref) => [repoName(ref).toLowerCase(), ref])).values()];
   const failed: { repo: string; error: string }[] = [];
-  for (const { owner, repo } of repos) {
+  for (const ref of repos) {
     try {
-      await ingestRepo(owner, repo);
+      await ingestRepo(ref);
     } catch (error) {
-      failed.push({ repo: `${owner}/${repo}`, error: error instanceof Error ? error.message : String(error) });
+      failed.push({ repo: repoName(ref), error: error instanceof Error ? error.message : String(error) });
     }
   }
 

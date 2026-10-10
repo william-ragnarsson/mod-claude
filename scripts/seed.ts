@@ -1,6 +1,7 @@
 // Loads known mod repos into the directory.
-// Run with: npx tsx --env-file=.env.local scripts/seed.ts [--dry] [owner/repo ...]
+// Run with: npx tsx --env-file=.env.local scripts/seed.ts [--dry] [owner/repo | gitlab.com/group/project ...]
 // --dry lists the mods it finds without writing to the database.
+import { parseRepoUrl, repoName } from "../lib/hosts";
 import { findMods, ingestRepo } from "../lib/ingest";
 
 const SEED_REPOS = [
@@ -31,12 +32,16 @@ async function main() {
   const repos = named.length > 0 ? named : SEED_REPOS;
   let total = 0;
   for (const fullName of repos) {
-    const [owner, repo] = fullName.split("/");
+    const ref = parseRepoUrl(fullName);
+    if (!ref) {
+      console.log(`skip  ${fullName}: not a GitHub or GitLab repo`);
+      continue;
+    }
     try {
       if (dry) {
-        const { repo: info, mods, copies, unlisted } = await findMods(owner, repo);
+        const { repo: info, mods, copies, unlisted } = await findMods(ref);
         total += mods.length;
-        console.log(`found ${info.owner}/${info.repo} (${info.stars} stars, ${info.defaultBranch})`);
+        console.log(`found ${repoName(info)} (${info.stars} stars, ${info.defaultBranch})`);
         for (const mod of mods) {
           const install = `install ${mod.installName}@${mod.marketplace}`;
           console.log(`      ${mod.slug} at /${mod.path} | ${install} | readme ${mod.readmePath ?? "none"}`);
@@ -45,7 +50,7 @@ async function main() {
         for (const mod of unlisted) console.log(`      skip ${mod.slug} at /${mod.path}: not in the marketplace`);
         continue;
       }
-      const { added, existing, removed } = await ingestRepo(owner, repo);
+      const { added, existing, removed } = await ingestRepo(ref);
       total += added.length + existing.length;
       const names = [...added, ...existing].map((mod) => mod.name).join(", ");
       const gone = removed.length > 0 ? `, ${removed.length} removed (${removed.map((mod) => mod.name).join(", ")})` : "";

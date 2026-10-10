@@ -1,4 +1,5 @@
 import type { ModSummary } from "./data";
+import { repoName } from "./hosts";
 
 /**
  * Made-up install counts, so the list doesn't open on a column of zeros while real counting gets going. A repo gets
@@ -9,7 +10,8 @@ import type { ModSummary } from "./data";
 export function addSyntheticInstalls(mods: ModSummary[]): ModSummary[] {
   const repos = new Map<string, ModSummary[]>();
   for (const mod of mods) {
-    const key = `${mod.owner}/${mod.repo}`.toLowerCase();
+    // GitHub repos keep the "owner/repo" key they always had, so their counts don't move.
+    const key = repoName(mod).toLowerCase();
     repos.set(key, [...(repos.get(key) ?? []), mod]);
   }
 

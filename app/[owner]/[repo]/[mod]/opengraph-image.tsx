@@ -7,7 +7,7 @@ export const contentType = "image/png";
 
 export default async function Image({ params }: { params: Promise<{ owner: string; repo: string; mod: string }> }) {
   const { owner, repo, mod: slug } = await params;
-  const mod = await getMod(owner, repo, slug);
+  const mod = await getMod("github", owner, repo, slug);
   if (!mod) return new Response("Not found", { status: 404 });
   // Stars only, like the page: getMod's installs leave out the made-up ones the home list adds (lib/synthetic.ts).
   return ogImage({

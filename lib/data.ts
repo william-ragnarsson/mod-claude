@@ -1,8 +1,12 @@
 import { cacheLife, cacheTag } from "next/cache";
+import { fromStored, marketplaceSource, storedOwner, type Host } from "./hosts";
 import { publicClient } from "./supabase";
 import { addSyntheticInstalls } from "./synthetic";
 
 export type ModSummary = {
+  // Not a column: read off the stored owner (lib/hosts.ts storedOwner).
+  host: Host;
+  // On GitLab, the project's whole namespace, which can hold slashes.
   owner: string;
   repo: string;
   slug: string;
@@ -43,10 +47,10 @@ export async function getMods(): Promise<ModSummary[]> {
     .order("created_at", { ascending: true })
     .limit(2000);
   if (error) throw new Error(error.message);
-  return addSyntheticInstalls(data);
+  return addSyntheticInstalls(data.map(fromStored));
 }
 
-export async function getMod(owner: string, repo: string, slug: string): Promise<Mod | null> {
+export async function getMod(host: Host, owner: string, repo: string, slug: string): Promise<Mod | null> {
   "use cache";
   cacheTag("mods");
   cacheLife("hours");
@@ -54,16 +58,16 @@ export async function getMod(owner: string, repo: string, slug: string): Promise
   const { data, error } = await publicClient()
     .from("mods")
     .select(`${SUMMARY_COLUMNS}, path, default_branch, install_name, marketplace, readme, readme_path, updated_at`)
-    .eq("owner", owner)
+    .eq("owner", storedOwner({ host, owner }))
     .eq("repo", repo)
     .eq("slug", slug.toLowerCase())
     .maybeSingle();
   if (error) throw new Error(error.message);
-  return data;
+  return data && fromStored(data);
 }
 
 /** Every mod one repo holds, by name. */
-export async function getRepoMods(owner: string, repo: string): Promise<ModSummary[]> {
+export async function getRepoMods(host: Host, owner: string, repo: string): Promise<ModSummary[]> {
   "use cache";
   cacheTag("mods");
   cacheLife("hours");
@@ -71,12 +75,29 @@ export async function getRepoMods(owner: string, repo: string): Promise<ModSumma
   const { data, error } = await publicClient()
     .from("mods")
     .select(SUMMARY_COLUMNS)
-    .eq("owner", owner)
+    .eq("owner", storedOwner({ host, owner }))
     .eq("repo", repo)
     .order("name", { ascending: true })
     .limit(500);
   if (error) throw new Error(error.message);
-  return data;
+  return data.map(fromStored);
+}
+
+/**
+ * What a /gitlab/ path names. GitLab nests groups ("group/subgroup/project"), so the URL alone can't tell a mod's page
+ * (/gitlab/group/project/mod) from a repo's in a subgroup (/gitlab/group/subgroup/project). Try the mod first. Both can't
+ * exist: GitLab doesn't let a project and a subgroup share a path.
+ */
+export async function getGitLabPage(path: string[]) {
+  if (path.length >= 3) {
+    const mod = await getMod("gitlab", path.slice(0, -2).join("/"), path[path.length - 2], path[path.length - 1]);
+    if (mod) return { kind: "mod", mod } as const;
+  }
+  if (path.length >= 2) {
+    const mods = await getRepoMods("gitlab", path.slice(0, -1).join("/"), path[path.length - 1]);
+    if (mods.length > 0) return { kind: "repo", mods } as const;
+  }
+  return null;
 }
 
 /**
@@ -89,7 +110,7 @@ export type InstallGroup =
 
 /** How to install a mod from each place people run Claude Code. */
 export function installCommands(mod: Mod): InstallGroup[] {
-  const repo = `${mod.owner}/${mod.repo}`;
+  const repo = marketplaceSource(mod);
   const plugin = `${mod.install_name}@${mod.marketplace}`;
   return [
     {

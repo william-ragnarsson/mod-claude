@@ -7,7 +7,7 @@ export const contentType = "image/png";
 
 export default async function Image({ params }: { params: Promise<{ owner: string; repo: string }> }) {
   const { owner, repo } = await params;
-  const mods = await getRepoMods(owner, repo);
+  const mods = await getRepoMods("github", owner, repo);
   if (mods.length === 0) return new Response("Not found", { status: 404 });
   const count = `${mods.length} ${mods.length === 1 ? "mod" : "mods"}`;
   return ogImage({

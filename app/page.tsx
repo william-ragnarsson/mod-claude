@@ -30,7 +30,7 @@ export default async function Home() {
         <div>
           <h2 className="text-lg font-semibold tracking-tight text-fg">Built a mod or found one?</h2>
           <p className="mt-1 text-sm text-muted">
-            Paste its GitHub repo, yours or someone else&apos;s, and it&apos;s listed right away. No account needed.
+            Paste its GitHub or GitLab repo, yours or someone else&apos;s, and it&apos;s listed right away. No account needed.
           </p>
         </div>
         <Link

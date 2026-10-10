@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ModSummary } from "@/lib/data";
+import { modHref, repoHref, repoName, type Host } from "@/lib/hosts";
 
 const TABS = {
   popular: { label: "Popular", hint: "Most stars and installs" },
@@ -17,7 +18,7 @@ type Sort = Tab | "installs" | "stars";
  * One row on the list: a repo, with every mod of it that matches the search. Stars belong to the repo, so they count once.
  * Installs and heat add up over the row's mods.
  */
-type Entry = { owner: string; repo: string; stars: number; installs: number; heat: number; latest: string; mods: ModSummary[] };
+type Entry = { host: Host; owner: string; repo: string; stars: number; installs: number; heat: number; latest: string; mods: ModSummary[] };
 
 const popularity = (entry: Entry) => entry.stars + entry.installs;
 
@@ -74,9 +75,9 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
     const entries = new Map<string, Entry>();
     // getMods sorts by stars, so each repo lands in star order the first time one of its mods shows up.
     for (const mod of mods) {
-      const haystack = `${mod.name} ${mod.owner}/${mod.repo} ${mod.description ?? ""}`.toLowerCase();
+      const haystack = `${mod.name} ${repoName(mod)} ${mod.description ?? ""}`.toLowerCase();
       if (!terms.every((term) => haystack.includes(term))) continue;
-      const key = `${mod.owner}/${mod.repo}`;
+      const key = repoName(mod);
       const heat = heats.get(mod) ?? 0;
       const entry = entries.get(key);
       if (entry) {
@@ -86,6 +87,7 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
         if (mod.created_at > entry.latest) entry.latest = mod.created_at;
       } else {
         entries.set(key, {
+          host: mod.host,
           owner: mod.owner,
           repo: mod.repo,
           stars: mod.stars,
@@ -102,7 +104,7 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
   // How many mods each repo holds, matching the search or not.
   const totals = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const { owner, repo } of mods) counts.set(`${owner}/${repo}`, (counts.get(`${owner}/${repo}`) ?? 0) + 1);
+    for (const mod of mods) counts.set(repoName(mod), (counts.get(repoName(mod)) ?? 0) + 1);
     return counts;
   }, [mods]);
 
@@ -157,7 +159,7 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
           <Heading
             icon={<StarIcon />}
             label="Stars"
-            hint="Sort by GitHub stars on the repo"
+            hint="Sort by stars on the repo"
             active={sort === "stars"}
             onClick={() => setSort("stars")}
           />
@@ -172,11 +174,11 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
         ) : (
           <ol>
             {visible.map((entry, index) => (
-              <li key={`${entry.owner}/${entry.repo}`}>
+              <li key={repoName(entry)}>
                 {entry.mods.length === 1 ? (
                   <ModRow mod={entry.mods[0]} rank={index + 1} />
                 ) : (
-                  <RepoRow entry={entry} total={totals.get(`${entry.owner}/${entry.repo}`) ?? 0} rank={index + 1} />
+                  <RepoRow entry={entry} total={totals.get(repoName(entry)) ?? 0} rank={index + 1} />
                 )}
               </li>
             ))}
@@ -218,14 +220,12 @@ function Count({ value }: { value: number }) {
 
 function ModRow({ mod, rank }: { mod: ModSummary; rank: number }) {
   return (
-    <Link href={`/${mod.owner}/${mod.repo}/${mod.slug}`} className={ROW}>
+    <Link href={modHref(mod)} className={ROW}>
       <span className="font-mono text-sm text-faint tabular-nums">{rank}</span>
       <span className="min-w-0">
         <span className="flex min-w-0 items-baseline gap-2.5">
           <span className="max-w-full shrink-0 truncate font-medium text-fg">{mod.name}</span>
-          <span className="truncate font-mono text-xs text-faint">
-            {mod.owner}/{mod.repo}
-          </span>
+          <span className="truncate font-mono text-xs text-faint">{repoName(mod)}</span>
         </span>
         {mod.description && <span className="mt-0.5 block truncate text-sm text-muted">{mod.description}</span>}
       </span>
@@ -237,7 +237,7 @@ function ModRow({ mod, rank }: { mod: ModSummary; rank: number }) {
 
 // The repo name links to the repo's page and covers the row; each mod's chip links to that mod above it.
 function RepoRow({ entry, total, rank }: { entry: Entry; total: number; rank: number }) {
-  const repoHref = `/${entry.owner}/${entry.repo}`;
+  const href = repoHref(entry);
   const shown = entry.mods.slice(0, SHOWN_MODS);
   const more = total - shown.length;
   return (
@@ -245,18 +245,19 @@ function RepoRow({ entry, total, rank }: { entry: Entry; total: number; rank: nu
       <span className="font-mono text-sm text-faint tabular-nums">{rank}</span>
       <span className="min-w-0">
         <span className="flex min-w-0 items-baseline gap-2.5">
-          <Link href={repoHref} className="max-w-full shrink-0 truncate font-medium text-fg after:absolute after:inset-0">
+          <Link href={href} className="max-w-full shrink-0 truncate font-medium text-fg after:absolute after:inset-0">
             {entry.repo}
           </Link>
           <span className="truncate font-mono text-xs text-faint">
-            {entry.owner} · {entry.mods.length < total ? `${entry.mods.length} of ${total}` : total} mods
+            {entry.host === "github" ? entry.owner : `gitlab.com/${entry.owner}`} ·{" "}
+            {entry.mods.length < total ? `${entry.mods.length} of ${total}` : total} mods
           </span>
         </span>
         <span className="mt-1.5 flex flex-wrap gap-1.5">
           {shown.map((mod) => (
             <Link
               key={mod.slug}
-              href={`/${mod.owner}/${mod.repo}/${mod.slug}`}
+              href={modHref(mod)}
               className="relative z-10 max-w-full truncate rounded-md border border-line bg-bg px-2 py-0.5 text-xs text-muted transition-colors hover:border-line-strong hover:text-fg"
             >
               {mod.name}
@@ -264,7 +265,7 @@ function RepoRow({ entry, total, rank }: { entry: Entry; total: number; rank: nu
           ))}
           {more > 0 && (
             <Link
-              href={repoHref}
+              href={href}
               className="relative z-10 rounded-md px-1.5 py-0.5 text-xs text-faint transition-colors hover:text-fg"
             >
               +{more} more

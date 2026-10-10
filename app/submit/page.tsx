@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { SITE } from "@/lib/site";
 import { SubmitForm } from "./SubmitForm";
 
-const description = "Add a Claude Code mod to the directory. Paste a public GitHub repo, no account needed.";
+const description = "Add a Claude Code mod to the directory. Paste a public GitHub or GitLab repo, no account needed.";
 
 export const metadata: Metadata = {
   title: "Submit a mod",
@@ -16,7 +16,7 @@ export default function SubmitPage() {
     <div className="max-w-2xl pt-16 pb-24 sm:pt-24">
       <h1 className="text-3xl font-semibold tracking-tighter text-fg sm:text-4xl">Submit a mod</h1>
       <p className="mt-3 text-muted">
-        Paste a public GitHub repo. Every mod in it is listed right away, no account needed. Stars and READMEs
+        Paste a public GitHub or GitLab repo. Every mod in it is listed right away, no account needed. Stars and READMEs
         refresh daily.
       </p>
 
