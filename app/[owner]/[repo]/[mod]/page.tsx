@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { ModSkeleton, ModView } from "@/components/ModView";
 import { getMod, getMods } from "@/lib/data";
 import { modHref } from "@/lib/hosts";
+import { SITE } from "@/lib/site";
 
 // GitHub mods. GitLab mods live under /gitlab/ (app/gitlab/[...path]).
 
@@ -28,7 +29,7 @@ export async function generateMetadata({ params }: PageProps<"/[owner]/[repo]/[m
     title: `${mod.name} by ${mod.owner}`,
     description,
     alternates: { canonical: url },
-    openGraph: { title: mod.name, description, url },
+    openGraph: { siteName: SITE.name, title: mod.name, description, url },
   };
 }
 

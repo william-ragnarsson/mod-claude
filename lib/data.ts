@@ -84,6 +84,23 @@ export async function getRepoMods(host: Host, owner: string, repo: string): Prom
 }
 
 /**
+ * What a /gitlab/ path names. GitLab nests groups ("group/subgroup/project"), so the URL alone can't tell a mod's page
+ * (/gitlab/group/project/mod) from a repo's in a subgroup (/gitlab/group/subgroup/project). Try the mod first. Both can't
+ * exist: GitLab doesn't let a project and a subgroup share a path.
+ */
+export async function getGitLabPage(path: string[]) {
+  if (path.length >= 3) {
+    const mod = await getMod("gitlab", path.slice(0, -2).join("/"), path[path.length - 2], path[path.length - 1]);
+    if (mod) return { kind: "mod", mod } as const;
+  }
+  if (path.length >= 2) {
+    const mods = await getRepoMods("gitlab", path.slice(0, -1).join("/"), path[path.length - 1]);
+    if (mods.length > 0) return { kind: "repo", mods } as const;
+  }
+  return null;
+}
+
+/**
  * One way to install a mod: commands pasted one at a time, or numbered steps
  * where the app has no command line, each with anything to paste attached.
  */

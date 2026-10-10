@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { RepoSkeleton, RepoView } from "@/components/RepoView";
 import { getMods, getRepoMods } from "@/lib/data";
+import { SITE } from "@/lib/site";
 
 // GitHub repos. GitLab repos live under /gitlab/ (app/gitlab/[...path]).
 
@@ -26,7 +27,7 @@ export async function generateMetadata({ params }: PageProps<"/[owner]/[repo]">)
     title: `${repo} by ${owner}`,
     description,
     alternates: { canonical: url },
-    openGraph: { title: repo, description, url },
+    openGraph: { siteName: SITE.name, title: repo, description, url },
   };
 }
 
