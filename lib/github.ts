@@ -6,9 +6,18 @@ export type RepoInfo = {
   description: string | null;
   stars: number;
   defaultBranch: string;
+  /** The last push to any branch. Null when GitHub doesn't say. */
+  pushedAt: string | null;
 };
 
 export class GitHubError extends Error {}
+
+let rateLimit: { remaining: number; resetsAt: number } | null = null;
+
+/** API requests left this hour for GITHUB_TOKEN, as of the last response. Null when unknown or since reset. */
+export function apiRequestsLeft(): number | null {
+  return rateLimit && Date.now() < rateLimit.resetsAt ? rateLimit.remaining : null;
+}
 
 /** Accepts github.com URLs (any depth), git URLs, or plain "owner/repo". */
 export function parseRepoUrl(input: string): { owner: string; repo: string } | null {
@@ -32,6 +41,9 @@ function apiHeaders(): HeadersInit {
 
 async function api(path: string): Promise<Response> {
   const res = await fetch(`${API}${path}`, { headers: apiHeaders(), cache: "no-store" });
+  const remaining = res.headers.get("x-ratelimit-remaining");
+  const reset = res.headers.get("x-ratelimit-reset");
+  if (remaining && reset) rateLimit = { remaining: Number(remaining), resetsAt: Number(reset) * 1000 };
   if (res.status === 403 || res.status === 429) {
     throw new GitHubError("GitHub rate limit reached. Try again in a few minutes.");
   }
@@ -52,6 +64,7 @@ export async function getRepo(owner: string, repo: string): Promise<RepoInfo | n
     description: data.description ?? null,
     stars: data.stargazers_count ?? 0,
     defaultBranch: data.default_branch ?? "main",
+    pushedAt: data.pushed_at ?? null,
   };
 }
 

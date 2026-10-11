@@ -142,13 +142,15 @@ async function readMod(
 /**
  * Finds every listable mod in a public GitHub repo, without saving anything. Skipped: `copies`, mods vendored
  * from other repos, and `unlisted`, mods the repo's top-level marketplace file doesn't list, so they can't be
- * installed with `/plugin marketplace add <owner>/<repo>` and `/plugin install`.
+ * installed with `/plugin marketplace add <owner>/<repo>` and `/plugin install`. Pass `known` when the caller
+ * already fetched the repo, to save a request.
  */
 export async function findMods(
   owner: string,
   repo: string,
+  known?: RepoInfo,
 ): Promise<{ repo: RepoInfo; mods: FoundMod[]; copies: FoundMod[]; unlisted: FoundMod[] }> {
-  const info = await getRepo(owner, repo);
+  const info = known ?? (await getRepo(owner, repo));
   if (!info) throw new IngestError("Repo not found or private.");
 
   const files = await getFilePaths(info.owner, info.repo, info.defaultBranch);
@@ -200,20 +202,35 @@ async function removeMods(owner: string, repo: string, keep = new Set<string>())
   return gone.map((row) => ({ owner, repo, slug: row.slug, name: row.name }));
 }
 
+/** Moves a renamed or transferred repo's rows, and their installs, to its new name. */
+async function moveMods(owner: string, repo: string, to: RepoInfo): Promise<void> {
+  const { error } = await adminClient()
+    .from("mods")
+    .update({ owner: to.owner, repo: to.repo })
+    .eq("owner", owner)
+    .eq("repo", repo);
+  // The new name is already listed too, so the old rows are duplicates.
+  if (error?.code === "23505") await removeMods(owner, repo);
+  else if (error) throw new Error(error.message);
+}
+
 /**
  * Adds or refreshes every mod in a public GitHub repo, and removes the repo's rows that are no longer listable
- * (deleted, renamed, copies, or dropped from the marketplace). Used by the submit form, the seed script and the daily refresh.
+ * (deleted, renamed, copies, or dropped from the marketplace). Used by the submit form, the seed script and the
+ * scheduled refresh, which passes the repo it already fetched as `known`.
  */
-export async function ingestRepo(owner: string, repo: string): Promise<IngestResult> {
+export async function ingestRepo(owner: string, repo: string, known?: RepoInfo): Promise<IngestResult> {
   let found: Awaited<ReturnType<typeof findMods>>;
   try {
-    found = await findMods(owner, repo);
+    found = await findMods(owner, repo, known);
   } catch (error) {
     // The repo is gone, private, or has no mods left. Network and rate-limit errors aren't IngestErrors.
     if (error instanceof IngestError) await removeMods(owner, repo);
     throw error;
   }
   const { repo: info, mods } = found;
+  // GitHub answers for the old name of a renamed repo, with the new one in full_name.
+  if (info.owner !== owner || info.repo !== repo) await moveMods(owner, repo, info);
 
   const db = adminClient();
   const { data: rows, error } = await db
@@ -234,6 +251,7 @@ export async function ingestRepo(owner: string, repo: string): Promise<IngestRes
     description: mod.description,
     stars: info.stars,
     default_branch: info.defaultBranch,
+    pushed_at: info.pushedAt,
     install_name: mod.installName,
     marketplace: mod.marketplace,
     readme: mod.readme,
