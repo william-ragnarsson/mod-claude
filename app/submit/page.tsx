@@ -16,8 +16,8 @@ export default function SubmitPage() {
     <div className="max-w-2xl pt-16 pb-24 sm:pt-24">
       <h1 className="text-3xl font-semibold tracking-tighter text-fg sm:text-4xl">Submit a mod</h1>
       <p className="mt-3 text-muted">
-        Paste a public GitHub repo. Every mod in it is listed right away, no account needed. Stars and READMEs
-        refresh daily.
+        Paste a public GitHub repo. Every mod in it is listed right away, no account needed. Changes you push show
+        up within an hour, or submit the repo again to refresh it now.
       </p>
 
       <div className="mt-10">

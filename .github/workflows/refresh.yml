@@ -1,0 +1,23 @@
+# Hourly refresh of the listed mods. Vercel's Hobby plan only runs crons once a day (vercel.json keeps that as a
+# fallback), so GitHub calls the endpoint instead. Needs the repo secret CRON_SECRET, the same value as on Vercel.
+name: Refresh mods
+
+on:
+  schedule:
+    # Off the hour, when GitHub's scheduler is least busy.
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    if: github.repository == 'william-ragnarsson/mod-claude'
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Call /api/cron/refresh
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 330 \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            https://www.mod-claude.com/api/cron/refresh

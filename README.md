@@ -2,13 +2,14 @@
 
 A directory of [Claude Code mods](https://code.claude.com/docs/en/plugins/mods/reference), live at https://www.mod-claude.com.
 
-Anyone can submit a public GitHub repo, with no account. The site finds every mod in it (any folder whose `hooks/hooks.json` has a `modules` entry) and lists it right away. The home page sorts mods by Popular (GitHub stars plus installs), Hot (recent installs, each counting half as much every 3 days) or Recent, and by installs or stars when you click those column headings. An install is someone copying a mod's install command on the site, counted once per browser. For now the counts shown also include made-up installs, about 2.5 times each repo's stars with noise, to get the site started (`lib/synthetic.ts`; Hot only counts real ones). A daily job refreshes stars, descriptions and READMEs.
+Anyone can submit a public GitHub repo, with no account. The site finds every mod in it (any folder whose `hooks/hooks.json` has a `modules` entry) and lists it right away. The home page sorts mods by Popular (GitHub stars plus installs), Hot (recent installs, each counting half as much every 3 days) or Recent, and by installs or stars when you click those column headings. An install is someone copying a mod's install command on the site, counted once per browser. For now the counts shown also include made-up installs, about 2.5 times each repo's stars with noise, to get the site started (`lib/synthetic.ts`; Hot only counts real ones). An hourly job updates stars, and re-reads the descriptions and READMEs of repos pushed to since they were last read (and of every repo once a day).
 
 Built with Next.js 16 (Cache Components) and Supabase.
 
 ## How it works
 
-- `lib/ingest.ts` has `ingestRepo(owner, repo)`, the one function that finds and saves mods. The submit form, the seed script and the daily cron all call it.
+- `lib/ingest.ts` has `ingestRepo(owner, repo)`, the one function that finds and saves mods. The submit form, the seed script and the hourly refresh all call it.
+- `lib/refresh.ts` checks every listed repo with one GitHub request and re-reads only those that were pushed to, renamed or deleted, plus each repo once a day. It stops early to keep 1,000 of the token's hourly requests for submissions, and the next run picks up what it skipped.
 - `lib/data.ts` reads mods with the public key, cached under the `mods` tag. Submissions call `updateTag("mods")`, so new mods show up immediately.
 - The `mods` table has row-level security: the public key can only read rows that aren't hidden. Only the server writes, using `SUPABASE_SECRET_KEY`.
 - To take a mod down, set `hidden = true` on its row in the Supabase table editor.
@@ -44,6 +45,7 @@ npx tsx --env-file=.env.local scripts/seed.ts owner/repo other/repo    # add spe
 ## Deploy
 
 1. Push this repo to GitHub and import it in Vercel.
-2. Add `SUPABASE_SECRET_KEY`, `GITHUB_TOKEN` and `CRON_SECRET` to the Vercel project. Without them the site still builds and lists mods, but submitting and the daily refresh fail.
+2. Add `SUPABASE_SECRET_KEY`, `GITHUB_TOKEN` and `CRON_SECRET` to the Vercel project. Without them the site still builds and lists mods, but submitting and the refresh fail.
 3. Add the domain `mod-claude.com` (and `www.mod-claude.com`) under Project → Domains.
-4. `vercel.json` schedules `/api/cron/refresh` daily at 06:00 UTC. Vercel sends `CRON_SECRET` automatically.
+4. `.github/workflows/refresh.yml` calls `/api/cron/refresh` hourly. Add the same `CRON_SECRET` as a GitHub Actions secret: `gh secret set CRON_SECRET`.
+5. `vercel.json` also schedules it daily at 06:00 UTC, as a fallback (Vercel's Hobby plan only allows daily crons). Vercel sends `CRON_SECRET` automatically.
