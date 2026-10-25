@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { categoriesOf, categoryLabel, isCategory, type CategoryId } from "@/lib/categories";
 import type { ModSummary } from "@/lib/data";
 
 const TABS = {
@@ -44,9 +45,36 @@ const compact = new Intl.NumberFormat("en", {
   roundingPriority: "lessPrecision",
 });
 
+// The picked category lives in the URL, as ?category=<id>, so a mod page can link to the list on one category. The
+// list is static, so the server renders every mod and the browser narrows to the URL's category as it hydrates.
+const urlChanged = new Set<() => void>();
+
+function subscribeToUrl(onChange: () => void) {
+  urlChanged.add(onChange);
+  window.addEventListener("popstate", onChange);
+  return () => {
+    urlChanged.delete(onChange);
+    window.removeEventListener("popstate", onChange);
+  };
+}
+
+function categoryInUrl(): CategoryId | null {
+  const param = new URLSearchParams(window.location.search).get("category");
+  return isCategory(param) ? param : null;
+}
+
+function pickCategory(next: CategoryId | null) {
+  const url = new URL(window.location.href);
+  if (next) url.searchParams.set("category", next);
+  else url.searchParams.delete("category");
+  window.history.replaceState(null, "", url);
+  for (const onChange of urlChanged) onChange();
+}
+
 export function ModList({ mods }: { mods: ModSummary[] }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("popular");
+  const category = useSyncExternalStore(subscribeToUrl, categoryInUrl, () => null);
   const search = useRef<HTMLInputElement>(null);
 
   // "/" jumps to search, like most developer sites.
@@ -69,12 +97,24 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
     return new Map(mods.map((mod) => [mod, mod.hot_at ? mod.hot * 0.5 ** ((latest - at(mod)) / HOT_HALF_LIFE_MS) : 0]));
   }, [mods]);
 
+  const listed = useMemo(() => new Map(mods.map((mod) => [mod, categoriesOf(mod.categories)])), [mods]);
+
+  // Categories with at least one mod, biggest first.
+  const shelf = useMemo(() => {
+    const counts = new Map<CategoryId, number>();
+    for (const ids of listed.values()) for (const id of ids) counts.set(id, (counts.get(id) ?? 0) + 1);
+    return [...counts].sort((a, b) => b[1] - a[1]);
+  }, [listed]);
+
   const visible = useMemo(() => {
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
     const entries = new Map<string, Entry>();
     // getMods sorts by stars, so each repo lands in star order the first time one of its mods shows up.
     for (const mod of mods) {
-      const haystack = `${mod.name} ${mod.owner}/${mod.repo} ${mod.description ?? ""}`.toLowerCase();
+      const ids = listed.get(mod) ?? [];
+      if (category && !ids.includes(category)) continue;
+      const labels = ids.map(categoryLabel).join(" ");
+      const haystack = `${mod.name} ${mod.owner}/${mod.repo} ${mod.description ?? ""} ${labels}`.toLowerCase();
       if (!terms.every((term) => haystack.includes(term))) continue;
       const key = `${mod.owner}/${mod.repo}`;
       const heat = heats.get(mod) ?? 0;
@@ -97,7 +137,7 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
       }
     }
     return [...entries.values()].sort(SORTS[sort]);
-  }, [mods, heats, query, sort]);
+  }, [mods, heats, listed, category, query, sort]);
 
   // How many mods each repo holds, matching the search or not.
   const totals = useMemo(() => {
@@ -143,6 +183,23 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
         </div>
       </div>
 
+      {shelf.length > 0 && (
+        <div
+          role="group"
+          aria-label="Category"
+          className="mt-3 flex gap-1.5 overflow-x-auto [scrollbar-width:none] sm:flex-wrap sm:overflow-visible"
+        >
+          <CategoryChip active={category === null} onClick={() => pickCategory(null)}>
+            All
+          </CategoryChip>
+          {shelf.map(([id, count]) => (
+            <CategoryChip key={id} active={category === id} count={count} onClick={() => pickCategory(category === id ? null : id)}>
+              {categoryLabel(id)}
+            </CategoryChip>
+          ))}
+        </div>
+      )}
+
       <div className="mt-6">
         <div className={`${COLUMNS} border-b border-line px-3 pb-2 font-mono text-[11px] tracking-wider text-faint uppercase`}>
           <span>#</span>
@@ -164,7 +221,7 @@ export function ModList({ mods }: { mods: ModSummary[] }) {
         </div>
         {visible.length === 0 ? (
           <p className="px-3 py-10 text-sm text-muted">
-            {mods.length === 0 ? "No mods listed yet. " : "No mods match your search. "}
+            {mods.length === 0 ? "No mods listed yet. " : category ? "No mods in this category match your search. " : "No mods match your search. "}
             <Link href="/submit" className="text-fg underline underline-offset-4 hover:no-underline">
               {mods.length === 0 ? "Submit the first one" : "Know one that's missing?"}
             </Link>
@@ -206,6 +263,35 @@ function Heading({ icon, label, hint, active, onClick }: HeadingProps) {
       <SortIcon />
       {icon}
       <span className="max-sm:sr-only">{label}</span>
+    </button>
+  );
+}
+
+type CategoryChipProps = { active: boolean; count?: number; onClick: () => void; children: ReactNode };
+
+function CategoryChip({ active, count, onClick, children }: CategoryChipProps) {
+  const chip = useRef<HTMLButtonElement>(null);
+
+  // On phones the row scrolls sideways, so bring the picked category into view, as one picked by the URL can start
+  // off screen. Only the row scrolls, not the page.
+  useEffect(() => {
+    const row = chip.current?.parentElement;
+    if (!active || !chip.current || !row) return;
+    const chipBox = chip.current.getBoundingClientRect();
+    const rowBox = row.getBoundingClientRect();
+    if (chipBox.left < rowBox.left || chipBox.right > rowBox.right) row.scrollLeft += chipBox.left - rowBox.left - 16;
+  }, [active]);
+
+  return (
+    <button
+      ref={chip}
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-line px-2.5 text-xs whitespace-nowrap text-muted transition-colors hover:border-line-strong hover:text-fg aria-pressed:border-line-strong aria-pressed:bg-hover aria-pressed:text-fg"
+    >
+      {children}
+      {count !== undefined && <span className="font-mono text-[11px] text-faint tabular-nums">{count}</span>}
     </button>
   );
 }

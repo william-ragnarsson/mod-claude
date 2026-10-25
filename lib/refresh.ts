@@ -1,5 +1,6 @@
 import { apiRequestsLeft, getRepo, type RepoInfo } from "./github";
 import { IngestError, ingestRepo } from "./ingest";
+import { inParallel } from "./parallel";
 import { adminClient } from "./supabase";
 
 // Every repo's files are re-read at least this often, even without a push, so one run a day still reads them all.
@@ -36,15 +37,6 @@ export type RefreshResult = {
   deferred: number;
   failed: { repo: string; error: string }[];
 };
-
-async function inParallel<T>(items: T[], limit: number, run: (item: T) => Promise<void>): Promise<void> {
-  let next = 0;
-  await Promise.all(
-    Array.from({ length: limit }, async () => {
-      while (next < items.length) await run(items[next++]);
-    }),
-  );
-}
 
 /** Why a repo's files need reading again, or null when only its star count can have changed. */
 function rereadReason(synced: Synced, info: RepoInfo | null, now: number): string | null {

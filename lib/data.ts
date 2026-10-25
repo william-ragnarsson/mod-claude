@@ -1,4 +1,5 @@
 import { cacheLife, cacheTag } from "next/cache";
+import type { CategoryScores } from "./categories";
 import { publicClient } from "./supabase";
 import { addSyntheticInstalls } from "./synthetic";
 
@@ -14,6 +15,8 @@ export type ModSummary = {
   // Installs decayed to hot_at, the last one: each counts half as much for every 3 days since (count_install, migration 0004).
   hot: number;
   hot_at: string | null;
+  // Jev's probability for each category (lib/categories.ts). categoriesOf picks the ones the mod is listed under.
+  categories: CategoryScores | null;
   created_at: string;
 };
 
@@ -28,7 +31,7 @@ export type Mod = ModSummary & {
   updated_at: string;
 };
 
-const SUMMARY_COLUMNS = "owner, repo, slug, name, description, stars, installs, hot, hot_at, created_at";
+const SUMMARY_COLUMNS = "owner, repo, slug, name, description, stars, installs, hot, hot_at, categories, created_at";
 
 export async function getMods(): Promise<ModSummary[]> {
   "use cache";
