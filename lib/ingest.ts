@@ -1,3 +1,4 @@
+import { categorizeMods } from "./categorize";
 import { getFilePaths, getRawFile, getRepo, parseRepoUrl, type RepoInfo } from "./github";
 import { adminClient } from "./supabase";
 
@@ -235,11 +236,13 @@ export async function ingestRepo(owner: string, repo: string, known?: RepoInfo):
   const db = adminClient();
   const { data: rows, error } = await db
     .from("mods")
-    .select("id, slug")
+    .select("id, slug, categories_hash")
     .eq("owner", info.owner)
     .eq("repo", info.repo);
   if (error) throw new Error(error.message);
   const existingIds = new Map(rows.map((row) => [row.slug.toLowerCase(), row.id as string]));
+  const hashes = new Map(rows.map((row) => [row.slug.toLowerCase(), row.categories_hash as string | null]));
+  const categorized = await categorizeMods(mods, (mod) => hashes.get(mod.slug) ?? null);
 
   const now = new Date().toISOString();
   const toRow = (mod: FoundMod) => ({
@@ -257,6 +260,8 @@ export async function ingestRepo(owner: string, repo: string, known?: RepoInfo):
     readme: mod.readme,
     readme_path: mod.readmePath,
     updated_at: now,
+    // Left out when unchanged, or when Jev couldn't judge the mod this time, to keep what's stored.
+    ...categorized.get(mod),
   });
 
   const result: IngestResult = {

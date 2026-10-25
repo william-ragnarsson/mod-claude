@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
 import Link from "next/link";
 import { Markdown } from "@/components/Markdown";
+import { categoriesOf, categoryLabel } from "@/lib/categories";
 import { getMod, getMods, installCommands } from "@/lib/data";
 import { SITE } from "@/lib/site";
 import { InstallCommands } from "./InstallCommands";
@@ -62,6 +63,7 @@ async function ModDetails({ params }: Pick<PageProps<"/[owner]/[repo]/[mod]">, "
     day: "numeric",
     timeZone: "UTC",
   });
+  const categories = categoriesOf(mod.categories);
 
   return (
     <div className="pt-10 pb-24 sm:pt-14">
@@ -98,6 +100,24 @@ async function ModDetails({ params }: Pick<PageProps<"/[owner]/[repo]/[mod]">, "
                 </a>
               </Detail>
               <Detail label="First seen">{firstSeen}</Detail>
+              {categories.length > 0 && (
+                <div className="flex items-start justify-between gap-4 py-3">
+                  <dt className="text-faint">{categories.length === 1 ? "Category" : "Categories"}</dt>
+                  <dd className="min-w-0 text-right text-muted">
+                    {categories.map((id, index) => (
+                      <span key={id}>
+                        {index > 0 && ", "}
+                        <Link
+                          href={`/?category=${id}`}
+                          className="whitespace-nowrap text-fg underline-offset-4 hover:underline"
+                        >
+                          {categoryLabel(id)}
+                        </Link>
+                      </span>
+                    ))}
+                  </dd>
+                </div>
+              )}
             </dl>
 
             <p className="text-xs leading-5 text-faint">
