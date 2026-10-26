@@ -68,9 +68,9 @@ async function ModDetails({ params }: Pick<PageProps<"/[owner]/[repo]/[mod]">, "
   return (
     <div className="pt-10 pb-24 sm:pt-14">
       <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1.5 font-mono text-sm text-faint">
-        <a href={`https://github.com/${mod.owner}`} className="transition-colors hover:text-fg">
+        <Link href="/" className="transition-colors hover:text-fg">
           {mod.owner}
-        </a>
+        </Link>
         <span>/</span>
         <Link href={`/${mod.owner}/${mod.repo}`} className="transition-colors hover:text-fg">
           {mod.repo}

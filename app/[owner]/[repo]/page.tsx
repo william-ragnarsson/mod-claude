@@ -55,9 +55,9 @@ async function RepoDetails({ params }: Pick<PageProps<"/[owner]/[repo]">, "param
   return (
     <div className="pt-10 pb-24 sm:pt-14">
       <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1.5 font-mono text-sm text-faint">
-        <a href={`https://github.com/${owner}`} className="transition-colors hover:text-fg">
+        <Link href="/" className="transition-colors hover:text-fg">
           {owner}
-        </a>
+        </Link>
         <span>/</span>
         <span className="text-muted">{repo}</span>
       </nav>

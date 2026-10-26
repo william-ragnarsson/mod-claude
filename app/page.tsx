@@ -15,7 +15,7 @@ export default async function Home() {
   return (
     <div className="pt-16 pb-24 sm:pt-24">
       <section className="max-w-2xl">
-        <h1 className="text-4xl font-semibold tracking-tighter text-fg sm:text-5xl">Mods for Claude Code</h1>
+        <h1 className="text-4xl font-semibold tracking-tighter text-fg sm:text-5xl">Claude Code mods</h1>
         <p className="mt-4 text-lg text-balance text-muted">{SITE.tagline}</p>
         <div className="mt-8 max-w-xl">
           <CopyCommand prompt=">" command="/plugin install <mod>@<marketplace>" />
